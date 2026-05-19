@@ -263,13 +263,14 @@ function render(){
   // TAB 5: Analysis & Recommendations
   if(tab===5){
     const{sc}=st;
-    const onlyActive=st.analysisActive!==false;
     const activeCamps=ACTIVE;
+    const onlyActive=st.analysisActive!==false;
+    const filterCamps=st.analysisActive==='custom'?(st.analysisCustom||[...ACTIVE]):st.analysisActive===true?ACTIVE:null;
     
     // Aggregate by placement
     const byP={};
     rawData.forEach(r=>{
-      if(onlyActive&&!activeCamps.includes(r.c))return;
+      if(filterCamps&&!filterCamps.includes(r.c))return;
       if(!byP[r.p])byP[r.p]={p:r.p,spend:0,revenue:0,clicks:0,imps:0,camps:new Set()};
       byP[r.p].spend+=r.ms;byP[r.p].revenue+=r.gr;byP[r.p].clicks+=(r.mc||0);byP[r.p].imps+=(r.mi||0);byP[r.p].camps.add(r.c);
     });
@@ -292,10 +293,21 @@ function render(){
     const testar=placements.filter(r=>r.rec==='testar');
     const excluir=placements.filter(r=>r.rec==='excluir');
 
-    html+=`<div class="filters">
-      <button class="btn ${onlyActive?'btn-green':'btn-outline'}" onclick="st.analysisActive=true;render()">Só campanhas ativas (${activeCamps.length})</button>
-      <button class="btn ${!onlyActive?'btn-green':'btn-outline'}" onclick="st.analysisActive=false;render()">Todas as campanhas</button>
+    const aMode=st.analysisActive===true?'active':st.analysisActive===false?'all':'custom';
+    const customCamps=st.analysisCustom||[...activeCamps];
+    const allCampsAnalysis=[...new Set(rawData.map(r=>r.c))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    html+=`<div class="filters" style="flex-wrap:wrap;gap:6px">
+      <button class="btn ${aMode==='active'?'btn-green':'btn-outline'}" onclick="st.analysisActive=true;render()">Só ativas (${activeCamps.length})</button>
+      <button class="btn ${aMode==='all'?'btn-green':'btn-outline'}" onclick="st.analysisActive=false;render()">Todas (${allCampsAnalysis.length})</button>
+      <button class="btn ${aMode==='custom'?'btn-green':'btn-outline'}" onclick="st.analysisActive='custom';if(!st.analysisCustom)st.analysisCustom=[...ACTIVE];render()">Selecionar</button>
     </div>`;
+    if(aMode==='custom'){
+      html+=`<div style="background:var(--card);border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <span style="font-size:12px;font-weight:700;margin-right:4px">Campanhas:</span>
+        ${allCampsAnalysis.map(c=>{const checked=customCamps.includes(c);const num=c.replace('Campanha ','');const isAct=ACTIVE.includes(c);return`<label style="display:flex;align-items:center;gap:3px;font-size:12px;padding:4px 8px;border-radius:6px;cursor:pointer;background:${checked?(isAct?'var(--green)':'#6c757d'):'var(--bg)'};color:${checked?'#fff':'var(--muted)'}"><input type="checkbox" ${checked?'checked':''} onchange="if(!st.analysisCustom)st.analysisCustom=[...ACTIVE];if(this.checked){st.analysisCustom.push('${c}')}else{st.analysisCustom=st.analysisCustom.filter(x=>x!=='${c}')};render()" style="display:none">${num}</label>`}).join('')}
+        <button onclick="st.analysisCustom=[...ACTIVE];render()" style="font-size:11px;background:none;border:1px solid var(--muted);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:8px">Reset</button>
+      </div>`;
+    }
 
     // Summary cards
     const totalSpend=placements.reduce((a,r)=>a+r.spend,0);
@@ -457,7 +469,7 @@ function resetAll(){rawData=[...INIT_RAW];hourlyData=[...INIT_HOURLY];st.tab=0;s
 
 function generatePlacementReport(incluir,testar,excluir,roas,spend,rev,profit,onlyActive){
   const today=new Date().toLocaleDateString('pt-BR');
-  const scope=onlyActive?'Campanhas Ativas':'Todas as Campanhas';
+  const scope=onlyActive==='custom'?'Campanhas Selecionadas':onlyActive?'Campanhas Ativas':'Todas as Campanhas';
   
   let txt=`📍 ANÁLISE POR PLACEMENT — GÁS DO POVO\n`;
   txt+=`📅 ${today} | Base: ${scope}\n`;
@@ -514,12 +526,12 @@ function generatePlacementReport(incluir,testar,excluir,roas,spend,rev,profit,on
 
 function generateHourlyReport(onlyActive){
   const today=new Date().toLocaleDateString('pt-BR');
-  const scope=onlyActive?'Campanhas Ativas':'Todas as Campanhas';
+  const scope=onlyActive==='custom'?'Campanhas Selecionadas':onlyActive?'Campanhas Ativas':'Todas as Campanhas';
   
   // Process hourly data
   const activeCamps=ACTIVE;
   let hF=hourlyData;
-  if(onlyActive) hF=hF.filter(r=>activeCamps.includes(r.c));
+  const fCamps=onlyActive==='custom'?(st.analysisCustom||[...ACTIVE]):onlyActive?activeCamps:null;if(fCamps) hF=hF.filter(r=>fCamps.includes(r.c));
   
   const byH={};for(let h=0;h<24;h++)byH[h]={s:0,r:0};
   hF.forEach(r=>{byH[r.h].s+=r.s;byH[r.h].r+=r.r});
