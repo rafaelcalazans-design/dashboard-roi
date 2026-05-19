@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROI OFFERWALL STREET — Gás do Povo</title>
+<title>ROI OFFERWALL STREET - GAS DO POVO</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Nunito:wght@400;600;700;800&display=swap');
@@ -50,8 +50,9 @@ select{padding:7px 12px;border-radius:7px;border:1px solid var(--border);backgro
 <div id="app">Carregando...</div>
 <script>
 const CC={"Campanha 7":"#f97316","Campanha 8":"#a855f7","Campanha 9":"#22c55e","Campanha 10":"#7c3aed","Campanha 11":"#ef4444","Campanha 12":"#3b82f6","Campanha 13":"#14b8a6","Campanha 14":"#eab308","Campanha 15":"#ec4899","Campanha 16":"#06b6d4","Campanha 17":"#8b5cf6","Campanha 18":"#f43f5e","Campanha 19":"#84cc16","Campanha 20":"#fb923c","Campanha 21":"#0ea5e9","Campanha 22":"#d946ef"};
-let ACTIVE=['Campanha 18','Campanha 19','Campanha 20','Campanha 21','Campanha 22'];
-function toggleActive(c){const i=ACTIVE.indexOf(c);if(i>=0)ACTIVE.splice(i,1);else ACTIVE.push(c);ACTIVE.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));render()}
+const DEFAULT_ACTIVE=['Campanha 18','Campanha 19','Campanha 20','Campanha 21','Campanha 22'];
+let ACTIVE=(()=>{try{const s=localStorage.getItem('dash_active');if(s){const a=JSON.parse(s);if(Array.isArray(a))return a}}catch(e){}return[...DEFAULT_ACTIVE]})();
+function toggleActive(c){const i=ACTIVE.indexOf(c);if(i>=0)ACTIVE.splice(i,1);else ACTIVE.push(c);ACTIVE.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));try{localStorage.setItem('dash_active',JSON.stringify(ACTIVE))}catch(e){}render()}
 const GAM_MAP={Facebook_Mobile_Feed:'Feed Facebook',Facebook_Marketplace:'Marketplace',Facebook_Mobile_Reels:'Facebook Reels',Facebook_Stories:'Facebook Stories',Instagram_Feed:'Feed Instagram',Instagram_Reels:'Instagram Reels',Instagram_Stories:'Instagram Stories',Facebook_Instream_Vid:'Reels in-stream',Facebook_Profile_Feed:'Feed do perfil do Facebook',Others:'Outros'};
 const META_MAP={Marketplace:'Marketplace','Facebook Stories':'Facebook Stories','Facebook Reels':'Facebook Reels','Instagram Reels':'Instagram Reels','Instagram Stories':'Instagram Stories','Resultados da pesquisa':'Resultados da pesquisa','Reels in-stream':'Reels in-stream','Anúncios no Facebook Reels':'Anúncios no FB Reels','Página inicial do Explorar':'Explorar Instagram','Feed do perfil do Facebook':'Feed do perfil do Facebook','Notificações do Facebook':'Notificações do Facebook'};
 
@@ -133,7 +134,7 @@ function render(){
 
   let html=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
     <div style="background:linear-gradient(135deg,#16a34a,#eab308);width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px">📊</div>
-    <div><h1 style="font-size:20px;font-weight:800">ROI Dashboard — Gás do Povo</h1>
+    <div><h1 style="font-size:20px;font-weight:800">ROI OFFERWALL STREET - GAS DO POVO</h1>
     <p style="font-size:12px;color:var(--muted)">${d.campaigns.length} campanhas · ${d.dates.length} datas · Ativas: ${ACTIVE.map(c=>c.replace('Campanha ','')).join(', ')}</p></div></div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-label">Gasto Meta</div><div class="kpi-value">${fmt(totals.spend)}</div><div class="kpi-sub">${totals.clicks.toLocaleString()} cliques</div></div>
@@ -678,7 +679,7 @@ function exportHTML(){
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROI Dashboard — Gás do Povo</title>
+<title>ROI OFFERWALL STREET - GAS DO POVO</title>
 <script src="${xlsxScript}"><\/script>
 <style>${styles}</style>
 </head>
