@@ -135,7 +135,7 @@ function render(){
     const{sc,sd,sf,sdr,dc,dA,dB,mx}=st;
     const campDates=sc!=='all'?d.dates.filter(dt=>d.daily.some(r=>r.c===sc&&r.d===dt)):d.dates;
     html+=`<div class="filters"><select onchange="S('sc',this.value)"><option value="all">Todas</option>${d.campaigns.map(c=>`<option value="${c}" ${sc===c?'selected':''}>${c}</option>`).join('')}</select>`;
-    if(!dc)html+=`<select onchange="S('sd',this.value)"><option value="all">Todas Datas</option>${d.dates.map(dt=>`<option value="${dt}" ${sd===dt?'selected':''}>${dt}</option>`).join('')}</select>`;
+    if(!dc)html+=`<input type="date" value="${sd==='all'?'':sd}" onchange="S('sd',this.value||'all')" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer">${sd!=='all'?` <button class="btn btn-outline" onclick="S('sd','all')" style="padding:5px 10px;font-size:10px">✕ Limpar data</button>`:''}`;
     html+=`<button class="btn ${dc?'btn-yellow':'btn-outline'}" onclick="S('dc',${!dc})">📅 ${dc?'Voltar':'Comparar dias'}</button></div>`;
     
     if(!dc){
@@ -147,7 +147,7 @@ function render(){
     } else {
       // Day comparison
       const da=dA||campDates[campDates.length-1]||'';const db=dB||(campDates.length>=2?campDates[campDates.length-2]:'');
-      html+=`<div class="filters"><span style="color:var(--muted);font-size:12px">Dia A:</span><select onchange="S('dA',this.value)">${campDates.map(dt=>`<option value="${dt}" ${da===dt?'selected':''}>${dt}</option>`).join('')}</select><b>vs</b><span style="color:var(--muted);font-size:12px">Dia B:</span><select onchange="S('dB',this.value)">${campDates.map(dt=>`<option value="${dt}" ${db===dt?'selected':''}>${dt}</option>`).join('')}</select></div>`;
+      html+=`<div class="filters"><span style="color:var(--muted);font-size:12px">Dia A:</span><input type="date" value="${da}" onchange="S('dA',this.value)" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif"><b>vs</b><span style="color:var(--muted);font-size:12px">Dia B:</span><input type="date" value="${db}" onchange="S('dB',this.value)" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif"></div>`;
       
       const M=mx;const METRICS=[{k:'gasto',l:'Gasto',i:'💸'},{k:'cliques',l:'Cliques',i:'👆'},{k:'receita',l:'Receita',i:'💰'},{k:'lucro',l:'Lucro',i:'📊'},{k:'roas',l:'ROAS',i:'📈'},{k:'delta',l:'Δ Var',i:'🔄'}];
       html+=`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px"><span style="font-size:11px;color:var(--muted);align-self:center;margin-right:4px">Métricas:</span>${METRICS.map(m=>`<button class="btn" onclick="TM('${m.k}')" style="padding:4px 10px;font-size:10px;${M[m.k]?'background:var(--blue);color:#fff;border:1px solid var(--blue)':'background:transparent;border:1px solid var(--border);color:var(--muted)'}">${m.i} ${m.l}</button>`).join('')}</div>`;
@@ -202,7 +202,7 @@ function render(){
     const worst=[...hData].filter(r=>r.s>0).sort((a,b)=>a.p-b.p)[0];
     const bestRoas=[...hData].filter(r=>r.s>0.5).sort((a,b)=>b.roas-a.roas)[0];
 
-    html+=`<div class="filters"><select onchange="S('shc',this.value)"><option value="all">Todas Campanhas</option>${hCamps.map(c=>`<option value="${c}" ${shc===c?'selected':''}>${c}</option>`).join('')}</select><select onchange="S('shd',this.value)"><option value="all">Todas Datas</option>${hDates.map(dt=>`<option value="${dt}" ${shd===dt?'selected':''}>${dt}</option>`).join('')}</select></div>`;
+    html+=`<div class="filters"><select onchange="S('shc',this.value)"><option value="all">Todas Campanhas</option>${hCamps.map(c=>`<option value="${c}" ${shc===c?'selected':''}>${c}</option>`).join('')}</select><input type="date" value="${shd==='all'?'':shd}" onchange="S('shd',this.value||'all')" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer">${shd!=='all'?` <button class="btn btn-outline" onclick="S('shd','all')" style="padding:5px 10px;font-size:10px">✕ Limpar</button>`:''}</div>`;
     html+=`<div class="kpis"><div class="kpi"><div class="kpi-label">Gasto</div><div class="kpi-value">${fmt(hT.s)}</div></div><div class="kpi"><div class="kpi-label">Receita</div><div class="kpi-value" style="color:var(--green)">${fmt(hT.r)}</div></div><div class="kpi"><div class="kpi-label">Lucro</div><div class="kpi-value" style="color:${hP>=0?'var(--green)':'var(--red)'}">${fmt(hP)}</div></div><div class="kpi"><div class="kpi-label">Melhor Hora</div><div class="kpi-value" style="color:var(--green)">${best?best.l:'--'}</div><div class="kpi-sub">${best?fmt(best.p)+' lucro':''}</div></div><div class="kpi"><div class="kpi-label">Melhor ROAS</div><div class="kpi-value" style="color:var(--green)">${bestRoas?bestRoas.l:'--'}</div><div class="kpi-sub">${bestRoas?bestRoas.roas+'x':''}</div></div></div>`;
 
     // Bar chart
