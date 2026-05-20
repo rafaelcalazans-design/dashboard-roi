@@ -47,7 +47,26 @@ select{padding:7px 12px;border-radius:7px;border:1px solid var(--border);backgro
 </head>
 <body>
 <div id="sync-status" style="display:none;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;background:#fff3cd;position:fixed;top:0;left:0;right:0;z-index:9999;border-bottom:2px solid #f39c12"></div>
-<div id="app">Carregando...</div>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#1a472a 0%,#2d6a4f 50%,#1a472a 100%)">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:90%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:32px;margin-bottom:8px">📊</div>
+      <h2 style="margin:0;font-size:18px;font-weight:800;color:#1a472a;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px">ROI OFFERWALL STREET</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:#888">GAS DO POVO · Dashboard</p>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Login</label>
+      <input id="login-user" type="text" placeholder="Usuário" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'">
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Senha</label>
+      <input id="login-pass" type="password" placeholder="Senha" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button onclick="doLogin()" style="width:100%;padding:14px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s" onmouseover="this.style.background='#1a472a'" onmouseout="this.style.background='#2d6a4f'">Entrar</button>
+    <div id="login-error" style="display:none;text-align:center;margin-top:12px;color:#e74c3c;font-size:13px;font-weight:600"></div>
+  </div>
+</div>
+<div id="app" style="display:none">Carregando...</div>
 <script>
 const CC={"Campanha 7":"#f97316","Campanha 8":"#a855f7","Campanha 9":"#22c55e","Campanha 10":"#7c3aed","Campanha 11":"#ef4444","Campanha 12":"#3b82f6","Campanha 13":"#14b8a6","Campanha 14":"#eab308","Campanha 15":"#ec4899","Campanha 16":"#06b6d4","Campanha 17":"#8b5cf6","Campanha 18":"#f43f5e","Campanha 19":"#84cc16","Campanha 20":"#fb923c","Campanha 21":"#0ea5e9","Campanha 22":"#d946ef"};
 const DEFAULT_ACTIVE=['Campanha 18','Campanha 19','Campanha 20','Campanha 21','Campanha 22'];
@@ -66,6 +85,39 @@ const dot=c=>`<span class="dot" style="background:${CC[c]||'#666'}"></span>`;
 function excelDateToStr(s){if(typeof s!=='number')return String(s).slice(0,10);const d=new Date((s-25569)*86400*1000);return d.toISOString().slice(0,10)}
 function parseDate(v){if(!v)return'';if(v instanceof Date){return`${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`}if(typeof v==='number')return excelDateToStr(v);const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);const m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`:s.slice(0,10)}
 function parseBRL(v){if(v==null||v==='')return 0;if(typeof v==='number')return v;const s=String(v).replace(/[A-Za-z$\s]/g,'').replace(/\./g,'').replace(',','.');return parseFloat(s)||0}
+
+const U_HASH='86f65e28a754e1a71b2df9403615a6c436c32c42a75a10d02813961b86f1e428';
+const P_HASH='d1af50190622531645ac7a63b2c1905072973b9318637884bf9e88cc0bdffa74';
+async function sha256(msg){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function doLogin(){
+  const u=document.getElementById('login-user').value.trim();
+  const p=document.getElementById('login-pass').value;
+  const uH=await sha256(u);
+  const pH=await sha256(p);
+  if(uH===U_HASH&&pH===P_HASH){
+    sessionStorage.setItem('dash_auth','1');
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('sync-status').style.display='block';
+    render();loadSheetsData();
+  }else{
+    const err=document.getElementById('login-error');
+    err.textContent='❌ Login ou senha incorretos';
+    err.style.display='block';
+    document.getElementById('login-pass').value='';
+  }
+}
+function checkAuth(){
+  if(sessionStorage.getItem('dash_auth')==='1'){
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    return true;
+  }
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  return false;
+}
+
 const META_SHEET_ID = '1ZdD6VTTczfr-52DhPxsDtFYEdxvALtJzhB-OPNl5Eow';
 const GAM_SHEET_ID = '1PGM4pFyzNBni7sR5QS3fMgZKvO4J7DsHdIPMJGAOYB4';
 const HORA_SHEET_ID = '1RVF6xPK9JWE7zo7vDEpNeFLCYtzZPfSM';
@@ -696,7 +748,26 @@ function exportHTML(){
 <style>${styles}</style>
 </head>
 <body>
-<div id="app">Carregando...</div>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#1a472a 0%,#2d6a4f 50%,#1a472a 100%)">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:90%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:32px;margin-bottom:8px">📊</div>
+      <h2 style="margin:0;font-size:18px;font-weight:800;color:#1a472a;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px">ROI OFFERWALL STREET</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:#888">GAS DO POVO · Dashboard</p>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Login</label>
+      <input id="login-user" type="text" placeholder="Usuário" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'">
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Senha</label>
+      <input id="login-pass" type="password" placeholder="Senha" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button onclick="doLogin()" style="width:100%;padding:14px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s" onmouseover="this.style.background='#1a472a'" onmouseout="this.style.background='#2d6a4f'">Entrar</button>
+    <div id="login-error" style="display:none;text-align:center;margin-top:12px;color:#e74c3c;font-size:13px;font-weight:600"></div>
+  </div>
+</div>
+<div id="app" style="display:none">Carregando...</div>
 <script>${scriptContent}<\/script>
 </body>
 </html>`;
@@ -711,8 +782,7 @@ function exportHTML(){
   URL.revokeObjectURL(url);
 }
 
-render();
-loadSheetsData();
+if(checkAuth()){render();loadSheetsData();}
 </script>
 </body>
 </html>
