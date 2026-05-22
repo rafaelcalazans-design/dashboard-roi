@@ -195,7 +195,7 @@ function render(){
     <div class="kpi"><div class="kpi-label">ROAS</div><div class="kpi-value" style="color:${totals.roas>=1?'var(--green)':'var(--yellow)'}">${totals.roas.toFixed(2)}x</div></div>
   </div>`;
 
-  const tabs=['Campanhas','Placement','Diário','Comparar','ROI por Hora','📊 Análise','Importar'];
+  const tabs=['Campanhas','Placement','Diário','Comparar','ROI por Hora','📊 Análise','🚀 Nova Campanha','Importar'];
   html+=`<div class="tabs">${tabs.map((t,i)=>`<button class="tab ${tab===i?'active':''}" onclick="S('tab',${i})">${t}</button>`).join('')}<button onclick="loadSheetsData()" style="margin-left:auto;background:#27ae60;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700" title="Atualizar dados do Google Sheets">🔄 Sincronizar</button></div>`;
 
   // TAB 0: Campaigns
@@ -451,8 +451,252 @@ function render(){
     html+=`</div>`;
   }
 
-  // TAB 6: Import
+
+    // STABILITY ANALYSIS - added to Analysis tab
+    // RPM Alert
+    const dailyRPM={};
+    rawData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      if(!dailyRPM[r.d])dailyRPM[r.d]={d:r.d,spend:0,rev:0,imps:0};
+      dailyRPM[r.d].spend+=r.ms;dailyRPM[r.d].rev+=r.gr;dailyRPM[r.d].imps+=(r.mi||0);
+    });
+    const rpmDays=Object.values(dailyRPM).map(r=>({...r,rpm:r.imps>0?r.rev/(r.imps/1000):0,roas:r.spend>0?r.rev/r.spend:0})).sort((a,b)=>a.d.localeCompare(b.d));
+    const avgRPM=rpmDays.length>0?rpmDays.reduce((a,r)=>a+r.rpm,0)/rpmDays.length:0;
+    const lastDay=rpmDays[rpmDays.length-1];
+    const rpmAlert=lastDay&&lastDay.rpm<avgRPM*0.7;
+    const roasAlert=lastDay&&lastDay.roas<0.85;
+
+    html+=`<div class="card" style="border-top:3px solid ${rpmAlert||roasAlert?'var(--red)':'var(--green)'}">
+      <h3>🚨 Alertas em Tempo Real</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado nos dados do último dia (${lastDay?lastDay.d:'--'})</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div style="background:${rpmAlert?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${rpmAlert?'#721c24':'#155724'}">${rpmAlert?'⚠️ RPM BAIXO':'✅ RPM OK'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?'$'+lastDay.rpm.toFixed(2):'--'}</div>
+          <div style="font-size:10px;color:${rpmAlert?'#721c24':'#155724'}">Média: $${avgRPM.toFixed(2)}</div>
+        </div>
+        <div style="background:${roasAlert?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${roasAlert?'#721c24':'#155724'}">${roasAlert?'⚠️ ROAS BAIXO':'✅ ROAS OK'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?lastDay.roas.toFixed(2)+'x':'--'}</div>
+          <div style="font-size:10px;color:${roasAlert?'#721c24':'#155724'}">Mínimo ideal: 0.85x</div>
+        </div>
+        <div style="background:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#721c24':'#155724'}">${lastDay&&(lastDay.rev-lastDay.spend)<0?'⚠️ DIA NEGATIVO':'✅ DIA POSITIVO'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?'$'+(lastDay.rev-lastDay.spend).toFixed(2):'--'}</div>
+          <div style="font-size:10px;color:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#721c24':'#155724'}">Lucro do dia</div>
+        </div>
+      </div>
+    </div>`;
+
+    // STABILITY SCORE per placement
+    const plByDay={};
+    rawData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      const k=r.p;
+      if(!plByDay[k])plByDay[k]={};
+      if(!plByDay[k][r.d])plByDay[k][r.d]={spend:0,rev:0};
+      plByDay[k][r.d].spend+=r.ms;plByDay[k][r.d].rev+=r.gr;
+    });
+    const plStability=Object.entries(plByDay).map(([p,days])=>{
+      const dArr=Object.values(days).map(d=>({roas:d.spend>0?d.rev/d.spend:0,profit:d.rev-d.spend}));
+      const nDays=dArr.length;
+      const profitDays=dArr.filter(d=>d.profit>0).length;
+      const avgRoas=dArr.reduce((a,d)=>a+d.roas,0)/nDays;
+      const variance=dArr.reduce((a,d)=>a+Math.pow(d.roas-avgRoas,2),0)/nDays;
+      const stdDev=Math.sqrt(variance);
+      const consistency=nDays>0?profitDays/nDays*100:0;
+      const cv=avgRoas>0?stdDev/avgRoas:999;
+      // Stability score: consistency weighted, penalize high CV
+      const score=consistency*(1-Math.min(cv,2)/2);
+      const totalSpend=Object.values(days).reduce((a,d)=>a+d.spend,0);
+      return{p,nDays,profitDays,avgRoas:+avgRoas.toFixed(2),stdDev:+stdDev.toFixed(2),consistency:+consistency.toFixed(0),cv:+cv.toFixed(2),score:+score.toFixed(0),totalSpend};
+    }).filter(r=>r.totalSpend>1).sort((a,b)=>b.score-a.score);
+
+    html+=`<div class="card">
+      <h3>📊 Score de Estabilidade por Placement</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Mede a consistência do ROAS dia a dia. Score alto = mais previsível e lucrativo.</p>
+      <div class="scroll"><table><thead><tr>
+        <th class="left">Placement</th>
+        <th>Score</th>
+        <th>Dias</th>
+        <th>Dias +</th>
+        <th>Consist.</th>
+        <th>ROAS médio</th>
+        <th>Variação</th>
+        <th>Veredicto</th>
+      </tr></thead><tbody>`;
+    plStability.forEach(r=>{
+      const verdict=r.score>=60?'🟢 Estável':r.score>=30?'🟡 Oscila':'🔴 Instável';
+      const color=r.score>=60?'var(--green)':r.score>=30?'var(--yellow)':'var(--red)';
+      html+=`<tr><td style="font-weight:600">${r.p}</td>
+        <td style="text-align:center"><span style="background:${color};color:#fff;padding:3px 8px;border-radius:4px;font-size:12px;font-weight:800">${r.score}</span></td>
+        <td class="mono right">${r.nDays}</td>
+        <td class="mono right" style="color:var(--green)">${r.profitDays}</td>
+        <td class="mono right">${r.consistency}%</td>
+        <td class="right">${badge(r.avgRoas,'roas')}</td>
+        <td class="mono right" style="font-size:11px;color:${r.cv>0.5?'var(--red)':'var(--green)'}">${r.cv<0.3?'Baixa':r.cv<0.6?'Média':'Alta'} (${r.cv})</td>
+        <td style="font-size:12px">${verdict}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div></div>`;
+
+    // STABLE HOURS analysis
+    const hByDay={};
+    hourlyData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      const k=r.h;
+      if(!hByDay[k])hByDay[k]={};
+      const day=r.d||'unknown';
+      if(!hByDay[k][day])hByDay[k][day]={s:0,r:0};
+      hByDay[k][day].s+=r.s;hByDay[k][day].r+=r.r;
+    });
+    const hStability=Object.entries(hByDay).map(([h,days])=>{
+      const dArr=Object.values(days).map(d=>({profit:d.r-d.s,roas:d.s>0?d.r/d.s:0}));
+      const nDays=dArr.length;
+      const profitDays=dArr.filter(d=>d.profit>0).length;
+      const consistency=nDays>0?profitDays/nDays*100:0;
+      const avgProfit=dArr.reduce((a,d)=>a+d.profit,0)/nDays;
+      const avgRoas=dArr.reduce((a,d)=>a+d.roas,0)/nDays;
+      const variance=dArr.reduce((a,d)=>a+Math.pow(d.profit-avgProfit,2),0)/nDays;
+      const stdDev=Math.sqrt(variance);
+      const totalSpend=Object.values(days).reduce((a,d)=>a+d.s,0);
+      return{h:+h,nDays,profitDays,consistency:+consistency.toFixed(0),avgProfit:+avgProfit.toFixed(2),avgRoas:+avgRoas.toFixed(2),stdDev:+stdDev.toFixed(2),totalSpend};
+    }).filter(r=>r.totalSpend>0.5).sort((a,b)=>a.h-b.h);
+
+    const safeHours=hStability.filter(r=>r.consistency>=70&&r.avgProfit>0);
+    const riskyHours=hStability.filter(r=>r.consistency<50||r.avgProfit<0);
+    const midHours=hStability.filter(r=>r.consistency>=50&&r.consistency<70);
+
+    html+=`<div class="card">
+      <h3>⏰ Horários Seguros vs Instáveis</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Horas com lucro consistente (≥70% dos dias) vs horas imprevisíveis</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">🟢 SEGUROS (${safeHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${safeHours.map(r=>'<span style="background:#d4edda;color:#155724;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:8px">🟡 OSCILAM (${midHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${midHours.map(r=>'<span style="background:#fff3cd;color:#856404;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 INSTÁVEIS (${riskyHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${riskyHours.map(r=>'<span style="background:#f8d7da;color:#721c24;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+      </div>
+      <div class="scroll"><table><thead><tr>
+        <th class="left">Hora</th>
+        <th>Dias analisados</th>
+        <th>Dias com lucro</th>
+        <th>Consistência</th>
+        <th>Lucro médio/dia</th>
+        <th>ROAS médio</th>
+        <th>Veredicto</th>
+      </tr></thead><tbody>`;
+    hStability.forEach(r=>{
+      const verdict=r.consistency>=70&&r.avgProfit>0?'🟢 Seguro':r.consistency>=50?'🟡 Oscila':'🔴 Instável';
+      html+=`<tr><td style="font-weight:700;font-family:monospace">${String(r.h).padStart(2,'0')}:00</td>
+        <td class="mono right">${r.nDays}</td>
+        <td class="mono right" style="color:var(--green)">${r.profitDays}</td>
+        <td class="right"><span style="background:${r.consistency>=70?'var(--green)':r.consistency>=50?'var(--yellow)':'var(--red)'};color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700">${r.consistency}%</span></td>
+        <td class="mono right" style="color:${r.avgProfit>=0?'var(--green)':'var(--red)'}">$${r.avgProfit}</td>
+        <td class="right">${badge(r.avgRoas,'roas')}</td>
+        <td style="font-size:12px">${verdict}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div></div>`;
+
+
+
+
+  // TAB 6: Nova Campanha
   if(tab===6){
+    const filterCampsGen=ACTIVE;
+    const byPGen={};
+    rawData.forEach(r=>{
+      if(!filterCampsGen.includes(r.c))return;
+      if(!byPGen[r.p])byPGen[r.p]={p:r.p,spend:0,revenue:0};
+      byPGen[r.p].spend+=r.ms;byPGen[r.p].revenue+=r.gr;
+    });
+    const plGen=Object.values(byPGen).map(r=>({...r,roas:r.spend>0?r.revenue/r.spend:0,profit:r.revenue-r.spend})).sort((a,b)=>b.roas-a.roas);
+    const goodPl=plGen.filter(r=>r.roas>=1.0&&r.spend>1);
+    const testPl=plGen.filter(r=>r.roas>=0.85&&r.roas<1.0&&r.spend>1);
+    const badPl=plGen.filter(r=>r.roas<0.85||r.spend<=1);
+    const hAgg={};
+    hourlyData.forEach(r=>{
+      if(!filterCampsGen.includes(r.c))return;
+      if(!hAgg[r.h])hAgg[r.h]={h:r.h,s:0,r:0};
+      hAgg[r.h].s+=r.s;hAgg[r.h].r+=r.r;
+    });
+    const hArr=Object.values(hAgg).map(r=>({...r,p:r.r-r.s,roas:r.s>0?r.r/r.s:0})).sort((a,b)=>b.p-a.p);
+    const bestHours=hArr.filter(r=>r.p>0).map(r=>String(r.h).padStart(2,'0')+':00');
+    const worstHours=hArr.filter(r=>r.p<0).sort((a,b)=>a.p-b.p).map(r=>String(r.h).padStart(2,'0')+':00');
+    const allCampNums=rawData.map(r=>parseInt(r.c.replace('Campanha ',''))).filter(n=>!isNaN(n));
+    const nextNum=Math.max(...allCampNums)+1;
+    if(!st.genName)st.genName='Campanha '+nextNum;
+    if(!st.genBudget)st.genBudget='10';
+    if(!st.genObjt)st.genObjt='OUTCOME_TRAFFIC';
+
+    html+=`<div class="card" style="border-top:3px solid var(--green)">
+      <h3 style="margin-bottom:4px">🚀 Gerador de Configuração de Campanha</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Monta o setup otimizado baseado nos seus dados de ROI. Copie e aplique no Gerenciador de Anúncios do Meta.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Nome da Campanha</label>
+          <input type="text" value="${st.genName||''}" onchange="st.genName=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box"></div>
+        <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Orçamento Diário (USD)</label>
+          <input type="number" value="${st.genBudget||'10'}" onchange="st.genBudget=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" min="1" step="1"></div>
+      </div>
+      <div style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Objetivo</label>
+        <select onchange="st.genObjt=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
+          <option value="OUTCOME_TRAFFIC" ${st.genObjt==='OUTCOME_TRAFFIC'?'selected':''}>Tráfego</option>
+          <option value="OUTCOME_ENGAGEMENT" ${st.genObjt==='OUTCOME_ENGAGEMENT'?'selected':''}>Engajamento</option>
+          <option value="OUTCOME_LEADS" ${st.genObjt==='OUTCOME_LEADS'?'selected':''}>Leads</option>
+        </select>
+      </div>
+    </div>`;
+
+    html+=`<div class="card"><h3>📍 Placements Recomendados</h3><p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado no ROAS das campanhas ativas</p>`;
+    if(goodPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:var(--green)">✅ USAR (ROAS ≥ 1.0x)</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${goodPl.map(p=>`<span style="background:#d4edda;color:#155724;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    if(testPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:#f39c12">⚠️ TESTAR (ROAS 0.85-1.0x)</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${testPl.map(p=>`<span style="background:#fff3cd;color:#856404;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    if(badPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:var(--red)">❌ EVITAR</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${badPl.map(p=>`<span style="background:#f8d7da;color:#721c24;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    html+=`</div>`;
+
+    html+=`<div class="card"><h3>⏰ Horários Recomendados</h3><p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado no lucro por hora</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><span style="font-size:12px;font-weight:700;color:var(--green)">✅ Melhores horas</span><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${bestHours.slice(0,10).map(h=>`<span style="background:#d4edda;color:#155724;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace">${h}</span>`).join('')}</div></div>
+        <div><span style="font-size:12px;font-weight:700;color:var(--red)">❌ Evitar</span><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${worstHours.slice(0,10).map(h=>`<span style="background:#f8d7da;color:#721c24;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace">${h}</span>`).join('')}</div></div>
+      </div></div>`;
+
+    const avgRoasGen=plGen.filter(r=>r.spend>1).reduce((a,r)=>a+r.roas,0)/(plGen.filter(r=>r.spend>1).length||1);
+    const goodRoas=goodPl.length>0?goodPl.reduce((a,r)=>a+r.roas*r.spend,0)/goodPl.reduce((a,r)=>a+r.spend,0):avgRoasGen;
+    const budget=parseFloat(st.genBudget)||10;
+    const projRev=budget*goodRoas;const projProfit=projRev-budget;
+
+    html+=`<div class="card" style="border-top:3px solid ${projProfit>=0?'var(--green)':'var(--red)'}">
+      <h3>💰 Projeção de ROI</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-label">Orçamento/dia</div><div class="kpi-value">$${budget.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">ROAS estimado</div><div class="kpi-value" style="color:var(--green)">${goodRoas.toFixed(2)}x</div></div>
+        <div class="kpi"><div class="kpi-label">Receita/dia</div><div class="kpi-value" style="color:var(--green)">${fmt(projRev)}</div></div>
+        <div class="kpi"><div class="kpi-label">Lucro/dia</div><div class="kpi-value" style="color:${projProfit>=0?'var(--green)':'var(--red)'}">$${projProfit.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">Lucro/mês</div><div class="kpi-value" style="color:${projProfit>=0?'var(--green)':'var(--red)'}">$${(projProfit*30).toFixed(2)}</div></div>
+      </div></div>`;
+
+    const cfgTxt=`📋 CONFIG — ${st.genName||'Nova Campanha'}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 Objetivo: ${st.genObjt==='OUTCOME_TRAFFIC'?'Tráfego':st.genObjt==='OUTCOME_ENGAGEMENT'?'Engajamento':'Leads'}\n💵 Orçamento diário: $${budget.toFixed(2)}\n\n✅ PLACEMENTS RECOMENDADOS:\n${goodPl.map(p=>'  • '+p.p+' (ROAS '+p.roas.toFixed(2)+'x)').join('\n')}\n\n⚠️ TESTAR:\n${testPl.length>0?testPl.map(p=>'  • '+p.p+' (ROAS '+p.roas.toFixed(2)+'x)').join('\n'):'  Nenhum'}\n\n❌ NÃO USAR:\n${badPl.map(p=>'  • '+p.p).join('\n')}\n\n⏰ MELHORES: ${bestHours.slice(0,8).join(', ')}\n⏰ EVITAR: ${worstHours.slice(0,5).join(', ')}\n\n💰 ROAS: ${goodRoas.toFixed(2)}x | Lucro/dia: $${projProfit.toFixed(2)} | Lucro/mês: $${(projProfit*30).toFixed(2)}`;
+
+    html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0">📋 Copiar Configuração</h3>
+      <button onclick="navigator.clipboard.writeText(\`${cfgTxt.replace(/`/g,'\\`')}\`).then(()=>{this.textContent='✅ Copiado!';setTimeout(()=>{this.textContent='📋 Copiar'},2000)})" class="btn btn-green" style="font-size:12px;padding:6px 14px">📋 Copiar</button></div>
+      <pre style="background:var(--bg);padding:14px;border-radius:8px;font-size:11px;white-space:pre-wrap;line-height:1.6;max-height:400px;overflow-y:auto">${cfgTxt}</pre></div>`;
+  }
+
+  // TAB 7: Importar
+  if(tab===7){
     html+=`<div class="card"><h3>📁 Importar Dados</h3><p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px">Arraste os arquivos Excel pra atualizar o dashboard. Aceita 3 tipos:</p>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
       <div><p style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--yellow)">📊 Meta Placement</p><div class="import-zone" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="HD(event,'meta')" onclick="document.getElementById('f-meta').click()"><input type="file" id="f-meta" accept=".xlsx,.xls" onchange="HF(event,'meta')"><div style="font-size:12px;color:var(--muted)">Arraste Excel</div></div><div id="s-meta"></div></div>
