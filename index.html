@@ -1,835 +1,1034 @@
-import { useState, useEffect, useRef } from "react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-
-// ── DATA ──────────────────────────────────────────────────────────────────────
-const publisherData = {
-  name: "Portal Notícias BR",
-  pageviews: "18.4M",
-  rpm: 4.72,
-  rpmChange: -8.3,
-  revenue: "R$ 86.840",
-  revenueChange: +3.1,
-  fillRate: 87.4,
-  fillRateChange: -2.1,
-  viewability: 61.2,
-  viewabilityChange: +1.4,
-};
-
-const rpmTimeline = [
-  { day: "Seg", rpm: 5.1, target: 5.5 },
-  { day: "Ter", rpm: 5.3, target: 5.5 },
-  { day: "Qua", rpm: 4.9, target: 5.5 },
-  { day: "Qui", rpm: 4.6, target: 5.5 },
-  { day: "Sex", rpm: 4.2, target: 5.5 },
-  { day: "Sáb", rpm: 3.8, target: 5.5 },
-  { day: "Dom", rpm: 4.7, target: 5.5 },
-  { day: "Seg", rpm: 4.72, target: 5.5 },
-];
-
-const adPositions = [
-  { position: "Header Desktop", viewability: 78, rpm: 6.2, status: "good" },
-  { position: "Leaderboard Mobile", viewability: 42, rpm: 2.1, status: "bad" },
-  { position: "Mid-content", viewability: 71, rpm: 5.8, status: "good" },
-  { position: "Sidebar", viewability: 55, rpm: 3.4, status: "warn" },
-  { position: "Footer", viewability: 28, rpm: 1.2, status: "bad" },
-];
-
-const sspData = [
-  { ssp: "Google ADX", fillRate: 94, cpm: 5.8, revenue: 52 },
-  { ssp: "Index Exchange", fillRate: 71, cpm: 4.2, revenue: 18 },
-  { ssp: "Magnite", fillRate: 63, cpm: 3.9, revenue: 14 },
-  { ssp: "Criteo", fillRate: 58, cpm: 3.1, revenue: 10 },
-  { ssp: "OpenX", fillRate: 44, cpm: 2.4, revenue: 6 },
-];
-
-const alerts = [
-  { id: 1, level: "critical", title: "Leaderboard Mobile com viewability crítica", detail: "42% — benchmark do setor é 70%. Perda estimada de R$ 3.200/mês.", time: "Agora" },
-  { id: 2, level: "warning", title: "Fill rate do OpenX caindo", detail: "Queda de 12% nos últimos 3 dias. Considere revisar floor prices.", time: "2h atrás" },
-  { id: 3, level: "warning", title: "RPM abaixo da meta nos fins de semana", detail: "Média 31% abaixo do target. Floor prices podem estar altos demais.", time: "1d atrás" },
-  { id: 4, level: "info", title: "Mid-content performando acima da média", detail: "RPM de R$ 5,80 — 24% acima do benchmark. Considere replicar o formato.", time: "1d atrás" },
-];
-
-const recommendations = [
-  {
-    id: 1,
-    priority: "alta",
-    impact: "+R$ 3.200/mês",
-    title: "Mover Leaderboard Mobile para abaixo do 1º parágrafo",
-    detail: "Viewability de 42% indica que o anúncio está acima da dobra apenas em telas pequenas. Descer o posicionamento pode elevar viewability para ~68% e aumentar CPM em 35%.",
-    action: "Ajustar posição do ad",
-    done: false,
-  },
-  {
-    id: 2,
-    priority: "alta",
-    impact: "+R$ 1.800/mês",
-    title: "Reduzir floor price no fim de semana para SSPs secundários",
-    detail: "Sábado e domingo têm demand 40% menor. Floor price atual de R$ 2,50 está bloqueando leilões. Reduzir para R$ 1,20 nos fins de semana pode aumentar fill rate em 18%.",
-    action: "Ajustar floor prices",
-    done: false,
-  },
-  {
-    id: 3,
-    priority: "média",
-    impact: "+R$ 900/mês",
-    title: "Remover Footer de SSPs com CPM < R$ 2,00",
-    detail: "O Footer tem viewability de 28% e CPM médio de R$ 1,20. Está degradando o score de viewability do inventário. Considere remover do leilão ou usar apenas para house ads.",
-    action: "Revisar inventário",
-    done: false,
-  },
-  {
-    id: 4,
-    priority: "média",
-    impact: "+R$ 600/mês",
-    title: "Testar formato sticky no Sidebar",
-    detail: "Sidebar tem viewability de 55%. Converter para sticky pode elevar para 80%+ e aumentar o CPM de R$ 3,40 para R$ 5,00+.",
-    action: "Testar sticky ad",
-    done: false,
-  },
-];
-
-const newFormats = [
-  {
-    id: 1,
-    category: "Engajamento",
-    format: "Offerwall",
-    icon: "🎁",
-    fit: "alto",
-    rpmEquivalente: "R$ 12–18",
-    esforco: "médio",
-    prazo: "2–4 semanas",
-    descricao: "Usuário realiza uma ação (survey, cadastro, app install) em troca de acesso a conteúdo premium. Funciona muito bem com audiências recorrentes e conteúdo de valor.",
-    requisitos: "Tempo de sessão > 2min, audiência recorrente",
-    sinalPositivo: true,
-    motivo: "Tempo de sessão médio de 3.8min e 62% de usuários recorrentes — perfil ideal para Offerwall.",
-    parceiros: ["Ogury", "AdColony", "Fyber"],
-    done: false,
-  },
-  {
-    id: 2,
-    category: "Engajamento",
-    format: "Quiz & Poll Monetizado",
-    icon: "🧠",
-    fit: "alto",
-    rpmEquivalente: "R$ 8–14",
-    esforco: "baixo",
-    prazo: "1–2 semanas",
-    descricao: "Quizzes e enquetes incorporados ao conteúdo editorial geram alto engajamento e podem ser monetizados via branded content ou coleta de dados first-party para venda de segmentos.",
-    requisitos: "Conteúdo editorial, audiência engajada",
-    sinalPositivo: true,
-    motivo: "Categoria de notícias/entretenimento tem CTR 3x maior em quizzes. Pode monetizar dados coletados via first-party.",
-    parceiros: ["Playbuzz", "Apester", "Riddle"],
-    done: false,
-  },
-  {
-    id: 3,
-    category: "Vídeo",
-    format: "Outstream Vídeo",
-    icon: "▶️",
-    fit: "alto",
-    rpmEquivalente: "R$ 15–25",
-    esforco: "baixo",
-    prazo: "1 semana",
-    descricao: "Anúncio em vídeo que aparece dentro do conteúdo textual sem precisar de player próprio. CPM muito superior ao display tradicional e não compete com o inventário atual.",
-    requisitos: "Nenhum — não precisa de conteúdo em vídeo próprio",
-    sinalPositivo: true,
-    motivo: "Seu Mid-content já tem viewability de 71% — posição ideal para outstream. CPM estimado 3-4x maior que banner atual.",
-    parceiros: ["Teads", "Sharethrough", "TripleLift"],
-    done: false,
-  },
-  {
-    id: 4,
-    category: "Dados",
-    format: "First-Party Data Monetization",
-    icon: "🗄️",
-    fit: "médio",
-    rpmEquivalente: "+20–40% no CPM",
-    esforco: "alto",
-    prazo: "1–3 meses",
-    descricao: "Coletar, segmentar e ativar dados first-party da audiência para oferecer targeting premium para anunciantes diretamente, sem depender de cookies de terceiros.",
-    requisitos: "Login/cadastro ou DMP implementado",
-    sinalPositivo: false,
-    motivo: "Requer implementação de coleta de dados e login wall. Alto potencial mas investimento inicial necessário.",
-    parceiros: ["LiveRamp", "OnAudience", "Navegg"],
-    done: false,
-  },
-  {
-    id: 5,
-    category: "Direto",
-    format: "Newsletter Ads",
-    icon: "📧",
-    fit: "médio",
-    rpmEquivalente: "R$ 20–50 CPM",
-    esforco: "baixo",
-    prazo: "imediato",
-    descricao: "Se o publisher tem base de e-mail ativa, newsletter ads têm CPM muito superior ao display — audiência segmentada, sem leilão, vendida diretamente para anunciantes.",
-    requisitos: "Base de e-mail ativa com > 10k subscribers",
-    sinalPositivo: false,
-    motivo: "Não identificamos dados de newsletter. Se existir base de e-mail, este é o canal com melhor CPM disponível.",
-    parceiros: ["Beehiiv", "Paved", "LiveIntent"],
-    done: false,
-  },
-  {
-    id: 6,
-    category: "Direto",
-    format: "Branded Content / Mídia Programada",
-    icon: "✍️",
-    fit: "médio",
-    rpmEquivalente: "R$ 5.000–30.000/campanha",
-    esforco: "alto",
-    prazo: "1–2 meses",
-    descricao: "Vender espaços editoriais diretamente para marcas como conteúdo patrocinado. CPM equivalente muito superior ao programático, mas exige time comercial e produção editorial.",
-    requisitos: "Audiência de nicho definida, time comercial",
-    sinalPositivo: false,
-    motivo: "Exige estrutura comercial. Porém, com 18M pageviews, o publisher tem escala suficiente para atrair marcas diretamente.",
-    parceiros: ["Outbrain Engage", "Taboola Studio", "Direto"],
-    done: false,
-  },
-];
-
-const SYSTEM_PROMPT = `Você é o Revenue Intelligence Copilot, um assistente especialista em monetização de publishers digitais.
-
-Você tem acesso aos seguintes dados do publisher "${publisherData.name}":
-
-MÉTRICAS GERAIS:
-- Pageviews: ${publisherData.pageviews}/mês
-- RPM médio: R$ ${publisherData.rpm} (${publisherData.rpmChange}% vs semana anterior)
-- Receita mensal: ${publisherData.revenue}
-- Fill rate: ${publisherData.fillRate}%
-- Viewability média: ${publisherData.viewability}%
-- Tempo médio de sessão: 3.8 minutos
-- Taxa de usuários recorrentes: 62%
-
-POSIÇÕES DE ANÚNCIO:
-${adPositions.map(p => `- ${p.position}: viewability ${p.viewability}%, RPM R$ ${p.rpm}`).join("\n")}
-
-SSPs:
-${sspData.map(s => `- ${s.ssp}: fill rate ${s.fillRate}%, CPM R$ ${s.cpm}, ${s.revenue}% da receita`).join("\n")}
-
-ALERTAS ATIVOS:
-${alerts.map(a => `- [${a.level.toUpperCase()}] ${a.title}: ${a.detail}`).join("\n")}
-
-RECOMENDAÇÕES DE OTIMIZAÇÃO (display):
-${recommendations.map(r => `- ${r.title} (impacto estimado: ${r.impact})`).join("\n")}
-
-OPORTUNIDADES DE NOVOS FORMATOS:
-${newFormats.map(f => `- ${f.format} (fit: ${f.fit}, RPM equivalente: ${f.rpmEquivalente}, prazo: ${f.prazo}): ${f.descricao}`).join("\n")}
-
-Responda sempre em português brasileiro, de forma direta e acionável. Foque em receita e performance. Quando der recomendações, sempre inclua o impacto estimado em receita quando possível. Você pode recomendar tanto otimizações de display quanto novos formatos de monetização (offerwall, quiz, vídeo, first-party data, newsletter ads, branded content). Seja conciso mas completo.`;
-
-// ── COMPONENTS ────────────────────────────────────────────────────────────────
-const MetricCard = ({ label, value, change, unit = "" }) => {
-  const positive = change > 0;
-  return (
-    <div style={{
-      background: "rgba(255,255,255,0.03)",
-      border: "1px solid rgba(255,255,255,0.08)",
-      borderRadius: 16,
-      padding: "20px 24px",
-      flex: 1,
-      minWidth: 160,
-    }}>
-      <div style={{ color: "#8a8fa8", fontSize: 12, fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
-      <div style={{ color: "#f0f2ff", fontSize: 28, fontFamily: "'Syne', sans-serif", fontWeight: 700, lineHeight: 1 }}>{value}{unit}</div>
-      {change !== undefined && (
-        <div style={{ marginTop: 8, fontSize: 12, fontFamily: "'DM Sans', sans-serif", color: positive ? "#4ade80" : "#f87171", display: "flex", alignItems: "center", gap: 4 }}>
-          <span>{positive ? "▲" : "▼"}</span>
-          <span>{Math.abs(change)}% vs semana anterior</span>
-        </div>
-      )}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROI OFFERWALL STREET - GAS DO POVO</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Nunito:wght@400;600;700;800&display=swap');
+:root{--dark:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--green:#16a34a;--red:#dc2626;--yellow:#eab308;--blue:#2563eb}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--dark);color:var(--text);font-family:'Nunito',sans-serif;padding:20px 16px;min-height:100vh}
+.mono{font-family:'JetBrains Mono',monospace}
+.card{background:var(--card);border-radius:12px;padding:20px;border:1px solid var(--border);margin-bottom:16px}
+.card h3{margin:0 0 14px;font-size:14px;font-weight:700}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.kpi{background:var(--card);border-radius:10px;padding:14px 18px;border:1px solid var(--border);flex:1 1 140px;min-width:140px}
+.kpi-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-family:'JetBrains Mono',monospace}
+.kpi-value{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;margin-top:4px}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.tabs{display:flex;gap:3px;margin-bottom:20px;background:var(--card);border-radius:10px;padding:3px;flex-wrap:wrap;width:fit-content}
+.tab{padding:9px 14px;border-radius:7px;border:none;cursor:pointer;font-size:11px;font-weight:700;font-family:'Nunito',sans-serif;background:transparent;color:var(--muted);transition:all .2s}
+.tab.active{background:var(--yellow);color:var(--dark)}
+.badge{padding:2px 8px;border-radius:5px;font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.badge-pos{background:rgba(22,163,74,.15);color:var(--green)}
+.badge-neg{background:rgba(220,38,38,.15);color:var(--red)}
+table{width:100%;border-collapse:collapse}
+th{padding:10px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);border-bottom:2px solid var(--border);white-space:nowrap;font-family:'JetBrains Mono',monospace;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--card);z-index:1}
+th.sorted{color:var(--yellow)}th.left{text-align:left}
+td{padding:9px 12px;font-size:12px;border-bottom:1px solid var(--border)}
+td.mono{font-family:'JetBrains Mono',monospace}td.right{text-align:right}
+tr.pr{background:rgba(22,163,74,.04)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+select{padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer}
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.scroll{overflow-x:auto;max-height:500px;overflow-y:auto}
+.import-zone{border:2px dashed var(--border);border-radius:12px;padding:30px;text-align:center;margin:12px 0;transition:all .3s;cursor:pointer}
+.import-zone:hover,.import-zone.drag{border-color:var(--yellow);background:rgba(234,179,8,.05)}
+.import-zone input[type=file]{display:none}
+.btn{padding:10px 20px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;transition:all .2s}
+.btn-yellow{background:var(--yellow);color:var(--dark)}.btn-green{background:var(--green);color:#fff}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btn-red{background:transparent;border:1px solid var(--red);color:var(--red)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.grid-2{grid-template-columns:1fr}.kpis{flex-direction:column}}
+</style>
+</head>
+<body>
+<div id="sync-status" style="display:none;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;background:#fff3cd;position:fixed;top:0;left:0;right:0;z-index:9999;border-bottom:2px solid #f39c12"></div>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#1a472a 0%,#2d6a4f 50%,#1a472a 100%)">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:90%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:32px;margin-bottom:8px">📊</div>
+      <h2 style="margin:0;font-size:18px;font-weight:800;color:#1a472a;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px">ROI OFFERWALL STREET</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:#888">GAS DO POVO · Dashboard</p>
     </div>
-  );
-};
-
-const AlertBadge = ({ level }) => {
-  const colors = { critical: ["#f87171", "rgba(248,113,113,0.12)"], warning: ["#fbbf24", "rgba(251,191,36,0.12)"], info: ["#60a5fa", "rgba(96,165,250,0.12)"] };
-  const [color, bg] = colors[level] || colors.info;
-  const labels = { critical: "Crítico", warning: "Atenção", info: "Info" };
-  return (
-    <span style={{ background: bg, color, border: `1px solid ${color}30`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
-      {labels[level]}
-    </span>
-  );
-};
-
-const PriorityBadge = ({ priority }) => {
-  const map = { alta: ["#f87171", "rgba(248,113,113,0.1)"], média: ["#fbbf24", "rgba(251,191,36,0.1)"], baixa: ["#4ade80", "rgba(74,222,128,0.1)"] };
-  const [color, bg] = map[priority] || map.baixa;
-  return (
-    <span style={{ background: bg, color, border: `1px solid ${color}30`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
-      {priority.charAt(0).toUpperCase() + priority.slice(1)}
-    </span>
-  );
-};
-
-const StatusDot = ({ status }) => {
-  const colors = { good: "#4ade80", warn: "#fbbf24", bad: "#f87171" };
-  return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: colors[status] || "#8a8fa8", marginRight: 8 }} />;
-};
-
-// ── MAIN APP ──────────────────────────────────────────────────────────────────
-export default function RevenueIntelligenceCopilot() {
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: `Olá! Sou o **Revenue Intelligence Copilot** do **${publisherData.name}**.\n\nAnalisei seus dados e encontrei **${alerts.filter(a => a.level === "critical").length} alertas críticos** e **${recommendations.length} oportunidades** com potencial de **+R$ 6.500/mês**.\n\nComo posso te ajudar? Você pode me perguntar sobre qualquer métrica, pedir análises ou entender melhor as recomendações.` }
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [recs, setRecs] = useState(recommendations);
-  const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = input.trim();
-    setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
-    setLoading(true);
-    try {
-      const history = [...messages, { role: "user", content: userMsg }].map(m => ({
-        role: m.role,
-        content: m.content.replace(/\*\*/g, ""),
-      }));
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: history,
-        }),
-      });
-      const data = await res.json();
-      const text = data.content?.map(b => b.text || "").join("") || "Erro ao processar resposta.";
-      setMessages(prev => [...prev, { role: "assistant", content: text }]);
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erro de conexão. Tente novamente." }]);
-    }
-    setLoading(false);
-  };
-
-  const toggleRec = (id) => setRecs(prev => prev.map(r => r.id === id ? { ...r, done: !r.done } : r));
-
-  const [formats, setFormats] = useState(newFormats);
-
-  const tabs = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "alerts", label: `Alertas ${alerts.filter(a => a.level === "critical").length > 0 ? "🔴" : ""}` },
-    { id: "recommendations", label: "Recomendações" },
-    { id: "formats", label: "💡 Novos Formatos" },
-    { id: "copilot", label: "✦ Copilot IA" },
-  ];
-
-  const totalImpact = recs.filter(r => !r.done).reduce((acc, r) => {
-    const val = parseInt(r.impact.replace(/\D/g, ""));
-    return acc + val;
-  }, 0);
-
-  return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0a0b14",
-      color: "#f0f2ff",
-      fontFamily: "'DM Sans', sans-serif",
-    }}>
-      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-
-      {/* HEADER */}
-      <div style={{
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
-        padding: "0 32px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        height: 64,
-        background: "rgba(10,11,20,0.95)",
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-        backdropFilter: "blur(12px)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16,
-          }}>✦</div>
-          <div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, lineHeight: 1 }}>Revenue Intelligence</div>
-            <div style={{ fontSize: 11, color: "#8a8fa8", marginTop: 2 }}>Copilot</div>
-          </div>
-        </div>
-        <div style={{
-          background: "rgba(99,102,241,0.12)",
-          border: "1px solid rgba(99,102,241,0.25)",
-          borderRadius: 20,
-          padding: "6px 14px",
-          fontSize: 13,
-          color: "#a5b4fc",
-          fontWeight: 500,
-        }}>
-          {publisherData.name}
-        </div>
-      </div>
-
-      {/* TABS */}
-      <div style={{
-        display: "flex",
-        gap: 4,
-        padding: "16px 32px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}>
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-            background: activeTab === tab.id ? "rgba(99,102,241,0.15)" : "transparent",
-            border: "none",
-            borderBottom: activeTab === tab.id ? "2px solid #6366f1" : "2px solid transparent",
-            color: activeTab === tab.id ? "#a5b4fc" : "#8a8fa8",
-            padding: "10px 18px",
-            cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: 14,
-            fontWeight: activeTab === tab.id ? 600 : 400,
-            borderRadius: "8px 8px 0 0",
-            transition: "all 0.2s",
-          }}>{tab.label}</button>
-        ))}
-      </div>
-
-      <div style={{ padding: "28px 32px", maxWidth: 1200, margin: "0 auto" }}>
-
-        {/* ── DASHBOARD ── */}
-        {activeTab === "dashboard" && (
-          <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, margin: 0 }}>Visão Geral da Semana</h2>
-              <p style={{ color: "#8a8fa8", margin: "4px 0 0", fontSize: 13 }}>Dados atualizados há 12 minutos</p>
-            </div>
-
-            {/* KPIs */}
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 28 }}>
-              <MetricCard label="RPM Médio" value={`R$ ${publisherData.rpm}`} change={publisherData.rpmChange} />
-              <MetricCard label="Receita Mensal" value={publisherData.revenue} change={publisherData.revenueChange} />
-              <MetricCard label="Fill Rate" value={publisherData.fillRate} unit="%" change={publisherData.fillRateChange} />
-              <MetricCard label="Viewability" value={publisherData.viewability} unit="%" change={publisherData.viewabilityChange} />
-              <MetricCard label="Pageviews" value={publisherData.pageviews} />
-            </div>
-
-            {/* Charts row */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
-              {/* RPM chart */}
-              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 24 }}>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 4 }}>RPM por Dia</div>
-                <div style={{ fontSize: 12, color: "#8a8fa8", marginBottom: 20 }}>Atual vs Meta (R$ 5,50)</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <AreaChart data={rpmTimeline}>
-                    <defs>
-                      <linearGradient id="rpmGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="day" tick={{ fill: "#8a8fa8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#8a8fa8", fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 7]} />
-                    <Tooltip contentStyle={{ background: "#12131f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#f0f2ff", fontSize: 12 }} />
-                    <Area type="monotone" dataKey="rpm" stroke="#6366f1" strokeWidth={2} fill="url(#rpmGrad)" name="RPM" />
-                    <Line type="monotone" dataKey="target" stroke="#4ade80" strokeWidth={1} strokeDasharray="4 4" dot={false} name="Meta" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* SSP revenue */}
-              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 24 }}>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Receita por SSP</div>
-                <div style={{ fontSize: 12, color: "#8a8fa8", marginBottom: 20 }}>Participação % na receita total</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={sspData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: "#8a8fa8", fontSize: 11 }} axisLine={false} tickLine={false} unit="%" />
-                    <YAxis type="category" dataKey="ssp" tick={{ fill: "#8a8fa8", fontSize: 11 }} axisLine={false} tickLine={false} width={90} />
-                    <Tooltip contentStyle={{ background: "#12131f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#f0f2ff", fontSize: 12 }} formatter={(v) => [`${v}%`, "Receita"]} />
-                    <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} name="Receita %" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Ad positions table */}
-            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 24 }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Performance por Posição de Anúncio</div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 0 }}>
-                {["Posição", "Viewability", "RPM", "Status"].map(h => (
-                  <div key={h} style={{ fontSize: 11, color: "#8a8fa8", textTransform: "uppercase", letterSpacing: "0.06em", padding: "0 0 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>{h}</div>
-                ))}
-                {adPositions.map((pos, i) => (
-                  <>
-                    <div key={`n${i}`} style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: 14, fontWeight: 500 }}>{pos.position}</div>
-                    <div key={`v${i}`} style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: 14, color: pos.viewability < 50 ? "#f87171" : pos.viewability < 65 ? "#fbbf24" : "#4ade80" }}>{pos.viewability}%</div>
-                    <div key={`r${i}`} style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: 14 }}>R$ {pos.rpm}</div>
-                    <div key={`s${i}`} style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}><StatusDot status={pos.status} />{pos.status === "good" ? "Saudável" : pos.status === "warn" ? "Atenção" : "Crítico"}</div>
-                  </>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── ALERTS ── */}
-        {activeTab === "alerts" && (
-          <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, margin: 0 }}>Alertas de Performance</h2>
-              <p style={{ color: "#8a8fa8", margin: "4px 0 0", fontSize: 13 }}>{alerts.filter(a => a.level === "critical").length} críticos · {alerts.filter(a => a.level === "warning").length} atenções · {alerts.filter(a => a.level === "info").length} informacionais</p>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {alerts.map(alert => (
-                <div key={alert.id} style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: `1px solid ${alert.level === "critical" ? "rgba(248,113,113,0.2)" : alert.level === "warning" ? "rgba(251,191,36,0.2)" : "rgba(96,165,250,0.15)"}`,
-                  borderRadius: 14,
-                  padding: 20,
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "flex-start",
-                }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                    background: alert.level === "critical" ? "rgba(248,113,113,0.15)" : alert.level === "warning" ? "rgba(251,191,36,0.15)" : "rgba(96,165,250,0.15)",
-                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18
-                  }}>
-                    {alert.level === "critical" ? "🚨" : alert.level === "warning" ? "⚠️" : "ℹ️"}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <AlertBadge level={alert.level} />
-                      <span style={{ fontSize: 11, color: "#8a8fa8" }}>{alert.time}</span>
-                    </div>
-                    <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{alert.title}</div>
-                    <div style={{ fontSize: 13, color: "#8a8fa8", lineHeight: 1.5 }}>{alert.detail}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── RECOMMENDATIONS ── */}
-        {activeTab === "recommendations" && (
-          <div>
-            <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-              <div>
-                <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, margin: 0 }}>Recomendações</h2>
-                <p style={{ color: "#8a8fa8", margin: "4px 0 0", fontSize: 13 }}>{recs.filter(r => !r.done).length} pendentes · impacto total estimado: <span style={{ color: "#4ade80", fontWeight: 600 }}>+R$ {totalImpact.toLocaleString("pt-BR")}/mês</span></p>
-              </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {recs.map(rec => (
-                <div key={rec.id} style={{
-                  background: rec.done ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 16,
-                  padding: 22,
-                  opacity: rec.done ? 0.5 : 1,
-                  transition: "all 0.3s",
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                        <PriorityBadge priority={rec.priority} />
-                        <span style={{ fontSize: 13, color: "#4ade80", fontWeight: 600 }}>{rec.impact}</span>
-                      </div>
-                      <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 6, textDecoration: rec.done ? "line-through" : "none" }}>{rec.title}</div>
-                      <div style={{ fontSize: 13, color: "#8a8fa8", lineHeight: 1.6 }}>{rec.detail}</div>
-                    </div>
-                    <button onClick={() => toggleRec(rec.id)} style={{
-                      background: rec.done ? "rgba(74,222,128,0.15)" : "rgba(99,102,241,0.15)",
-                      border: `1px solid ${rec.done ? "rgba(74,222,128,0.3)" : "rgba(99,102,241,0.3)"}`,
-                      color: rec.done ? "#4ade80" : "#a5b4fc",
-                      borderRadius: 10,
-                      padding: "8px 16px",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                      fontFamily: "'DM Sans', sans-serif",
-                      flexShrink: 0,
-                    }}>
-                      {rec.done ? "✓ Feito" : rec.action}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── NEW FORMATS ── */}
-        {activeTab === "formats" && (
-          <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, margin: 0 }}>💡 Oportunidades de Novos Formatos</h2>
-              <p style={{ color: "#8a8fa8", margin: "4px 0 0", fontSize: 13 }}>
-                Analisamos o perfil do publisher e identificamos <span style={{ color: "#a5b4fc", fontWeight: 600 }}>{formats.filter(f => f.fit === "alto").length} formatos com alto fit</span> — potencial de até <span style={{ color: "#4ade80", fontWeight: 600 }}>+R$ 25.000/mês</span> em receita incremental.
-              </p>
-            </div>
-
-            {/* fit filter pills */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-              {["Todos", "Engajamento", "Vídeo", "Dados", "Direto"].map(cat => (
-                <button key={cat} style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 20,
-                  padding: "6px 14px",
-                  color: "#8a8fa8",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontWeight: 500,
-                }}>{cat}</button>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {formats.map(fmt => (
-                <div key={fmt.id} style={{
-                  background: fmt.done ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${fmt.fit === "alto" && !fmt.done ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.07)"}`,
-                  borderRadius: 18,
-                  padding: 24,
-                  opacity: fmt.done ? 0.45 : 1,
-                  transition: "all 0.3s",
-                  position: "relative",
-                  overflow: "hidden",
-                }}>
-                  {fmt.fit === "alto" && !fmt.done && (
-                    <div style={{
-                      position: "absolute", top: 0, right: 0,
-                      background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                      color: "#fff", fontSize: 10, fontWeight: 700,
-                      padding: "4px 12px", borderRadius: "0 18px 0 10px",
-                      letterSpacing: "0.08em", textTransform: "uppercase",
-                    }}>Alto Fit ✦</div>
-                  )}
-                  <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-                    {/* icon */}
-                    <div style={{
-                      width: 48, height: 48, borderRadius: 14, flexShrink: 0,
-                      background: "rgba(255,255,255,0.06)",
-                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
-                    }}>{fmt.icon}</div>
-
-                    <div style={{ flex: 1 }}>
-                      {/* header */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 10, color: "#8a8fa8", background: "rgba(255,255,255,0.06)", borderRadius: 6, padding: "2px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{fmt.category}</span>
-                        <span style={{
-                          fontSize: 10, fontWeight: 600, borderRadius: 6, padding: "2px 8px",
-                          background: fmt.fit === "alto" ? "rgba(99,102,241,0.15)" : "rgba(251,191,36,0.1)",
-                          color: fmt.fit === "alto" ? "#a5b4fc" : "#fbbf24",
-                          border: `1px solid ${fmt.fit === "alto" ? "rgba(99,102,241,0.3)" : "rgba(251,191,36,0.2)"}`,
-                        }}>Fit {fmt.fit}</span>
-                        <span style={{ fontSize: 10, color: "#8a8fa8", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "2px 8px" }}>⏱ {fmt.prazo}</span>
-                        <span style={{ fontSize: 10, color: "#8a8fa8", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "2px 8px" }}>Esforço {fmt.esforco}</span>
-                      </div>
-
-                      <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{fmt.format}</div>
-                      <div style={{ fontSize: 13, color: "#8a8fa8", lineHeight: 1.6, marginBottom: 12 }}>{fmt.descricao}</div>
-
-                      {/* signal box */}
-                      <div style={{
-                        background: fmt.sinalPositivo ? "rgba(74,222,128,0.07)" : "rgba(251,191,36,0.07)",
-                        border: `1px solid ${fmt.sinalPositivo ? "rgba(74,222,128,0.2)" : "rgba(251,191,36,0.2)"}`,
-                        borderRadius: 10,
-                        padding: "10px 14px",
-                        fontSize: 12,
-                        color: fmt.sinalPositivo ? "#86efac" : "#fde68a",
-                        marginBottom: 14,
-                        lineHeight: 1.5,
-                      }}>
-                        {fmt.sinalPositivo ? "✅" : "⚠️"} <strong>Análise do perfil:</strong> {fmt.motivo}
-                      </div>
-
-                      {/* metrics + partners row */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: "#8a8fa8", marginBottom: 2 }}>RPM / CPM equivalente</div>
-                          <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 20, color: "#4ade80" }}>{fmt.rpmEquivalente}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: "#8a8fa8", marginBottom: 6 }}>Parceiros sugeridos</div>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {fmt.parceiros.map(p => (
-                              <span key={p} style={{ background: "rgba(255,255,255,0.06)", borderRadius: 6, padding: "3px 10px", fontSize: 11, color: "#c7cbe0" }}>{p}</span>
-                            ))}
-                          </div>
-                        </div>
-                        <button onClick={() => setFormats(prev => prev.map(f => f.id === fmt.id ? { ...f, done: !f.done } : f))} style={{
-                          background: fmt.done ? "rgba(74,222,128,0.15)" : "linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3))",
-                          border: `1px solid ${fmt.done ? "rgba(74,222,128,0.3)" : "rgba(99,102,241,0.4)"}`,
-                          color: fmt.done ? "#4ade80" : "#a5b4fc",
-                          borderRadius: 10,
-                          padding: "10px 20px",
-                          cursor: "pointer",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          fontFamily: "'DM Sans', sans-serif",
-                        }}>
-                          {fmt.done ? "✓ Em teste" : "Explorar formato →"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── COPILOT ── */}
-        {activeTab === "copilot" && (
-          <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)" }}>
-            <div style={{ marginBottom: 20 }}>
-              <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, margin: 0 }}>✦ Copilot IA</h2>
-              <p style={{ color: "#8a8fa8", margin: "4px 0 0", fontSize: 13 }}>Faça perguntas sobre sua operação em linguagem natural</p>
-            </div>
-
-            {/* Suggested questions */}
-            {messages.length <= 1 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                {[
-                  "Por que meu RPM caiu essa semana?",
-                  "Qual SSP devo priorizar?",
-                  "Como melhorar minha viewability?",
-                  "Qual a maior oportunidade de receita?",
-                ].map(q => (
-                  <button key={q} onClick={() => { setInput(q); }} style={{
-                    background: "rgba(99,102,241,0.08)",
-                    border: "1px solid rgba(99,102,241,0.2)",
-                    color: "#a5b4fc",
-                    borderRadius: 20,
-                    padding: "6px 14px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: "all 0.2s",
-                  }}>{q}</button>
-                ))}
-              </div>
-            )}
-
-            {/* Messages */}
-            <div style={{
-              flex: 1,
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-              padding: "4px 0 16px",
-            }}>
-              {messages.map((msg, i) => (
-                <div key={i} style={{
-                  display: "flex",
-                  justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                }}>
-                  <div style={{
-                    maxWidth: "78%",
-                    background: msg.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
-                    border: `1px solid ${msg.role === "user" ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.08)"}`,
-                    borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                    padding: "14px 18px",
-                    fontSize: 14,
-                    lineHeight: 1.7,
-                    color: "#f0f2ff",
-                    whiteSpace: "pre-wrap",
-                  }}>
-                    {msg.role === "assistant" && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: 6, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>✦</div>
-                        <span style={{ fontSize: 11, color: "#8a8fa8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Copilot</span>
-                      </div>
-                    )}
-                    {msg.content}
-                  </div>
-                </div>
-              ))}
-              {loading && (
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                  <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px 18px 18px 4px", padding: "14px 20px" }}>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {[0, 1, 2].map(i => (
-                        <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#6366f1", animation: `pulse 1.2s ${i * 0.2}s infinite` }} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input */}
-            <div style={{
-              display: "flex",
-              gap: 10,
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 16,
-              padding: "8px 8px 8px 18px",
-              alignItems: "flex-end",
-            }}>
-              <input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                placeholder="Pergunte sobre sua operação..."
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "#f0f2ff",
-                  fontSize: 14,
-                  fontFamily: "'DM Sans', sans-serif",
-                  resize: "none",
-                  minHeight: 24,
-                  lineHeight: 1.5,
-                }}
-              />
-              <button onClick={sendMessage} disabled={!input.trim() || loading} style={{
-                background: input.trim() && !loading ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "rgba(255,255,255,0.06)",
-                border: "none",
-                borderRadius: 10,
-                width: 40,
-                height: 40,
-                cursor: input.trim() && !loading ? "pointer" : "default",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                transition: "all 0.2s",
-                flexShrink: 0,
-              }}>↑</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.3; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.2); }
-        }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-        * { box-sizing: border-box; }
-      `}</style>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Login</label>
+      <input id="login-user" type="text" placeholder="Usuário" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'">
     </div>
-  );
+    <div style="margin-bottom:20px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Senha</label>
+      <input id="login-pass" type="password" placeholder="Senha" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button onclick="doLogin()" style="width:100%;padding:14px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s" onmouseover="this.style.background='#1a472a'" onmouseout="this.style.background='#2d6a4f'">Entrar</button>
+    <div id="login-error" style="display:none;text-align:center;margin-top:12px;color:#e74c3c;font-size:13px;font-weight:600"></div>
+  </div>
+</div>
+<div id="app" style="display:none">Carregando...</div>
+<script>
+const CC={"Campanha 7":"#f97316","Campanha 8":"#a855f7","Campanha 9":"#22c55e","Campanha 10":"#7c3aed","Campanha 11":"#ef4444","Campanha 12":"#3b82f6","Campanha 13":"#14b8a6","Campanha 14":"#eab308","Campanha 15":"#ec4899","Campanha 16":"#06b6d4","Campanha 17":"#8b5cf6","Campanha 18":"#f43f5e","Campanha 19":"#84cc16","Campanha 20":"#fb923c","Campanha 21":"#0ea5e9","Campanha 22":"#d946ef"};
+const DEFAULT_ACTIVE=['Campanha 18','Campanha 19','Campanha 20','Campanha 21','Campanha 22'];
+let ACTIVE=(()=>{try{const s=localStorage.getItem('dash_active');if(s){const a=JSON.parse(s);if(Array.isArray(a))return a}}catch(e){}return[...DEFAULT_ACTIVE]})();
+function toggleActive(c){const i=ACTIVE.indexOf(c);if(i>=0)ACTIVE.splice(i,1);else ACTIVE.push(c);ACTIVE.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));try{localStorage.setItem('dash_active',JSON.stringify(ACTIVE))}catch(e){}render()}
+const GAM_MAP={Facebook_Mobile_Feed:'Feed Facebook',Facebook_Marketplace:'Marketplace',Facebook_Mobile_Reels:'Facebook Reels',Facebook_Stories:'Facebook Stories',Instagram_Feed:'Feed Instagram',Instagram_Reels:'Instagram Reels',Instagram_Stories:'Instagram Stories',Facebook_Instream_Vid:'Reels in-stream',Facebook_Profile_Feed:'Feed do perfil do Facebook',Others:'Outros'};
+const META_MAP={Marketplace:'Marketplace','Facebook Stories':'Facebook Stories','Facebook Reels':'Facebook Reels','Instagram Reels':'Instagram Reels','Instagram Stories':'Instagram Stories','Resultados da pesquisa':'Resultados da pesquisa','Reels in-stream':'Reels in-stream','Anúncios no Facebook Reels':'Anúncios no FB Reels','Página inicial do Explorar':'Explorar Instagram','Feed do perfil do Facebook':'Feed do perfil do Facebook','Notificações do Facebook':'Notificações do Facebook'};
+
+// Helpers
+const fmt=v=>'$'+v.toFixed(2);
+const fmtPct=v=>(v>0?'+':'')+v.toFixed(1)+'%';
+const badge=(v,t)=>{const p=t==='roas'?v>=1:v>0;return`<span class="badge ${p?'badge-pos':'badge-neg'}">${t==='roas'?v.toFixed(2)+'x':fmtPct(v)}</span>`};
+const dot=c=>`<span class="dot" style="background:${CC[c]||'#666'}"></span>`;
+
+// Parsers
+function excelDateToStr(s){if(typeof s!=='number')return String(s).slice(0,10);const d=new Date((s-25569)*86400*1000);return d.toISOString().slice(0,10)}
+function parseDate(v){if(!v)return'';if(v instanceof Date){return`${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`}if(typeof v==='number')return excelDateToStr(v);const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);const m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`:s.slice(0,10)}
+function parseBRL(v){if(v==null||v==='')return 0;if(typeof v==='number')return v;const s=String(v).replace(/[A-Za-z$\s]/g,'').replace(/\./g,'').replace(',','.');return parseFloat(s)||0}
+
+const U_HASH='86f65e28a754e1a71b2df9403615a6c436c32c42a75a10d02813961b86f1e428';
+const P_HASH='d1af50190622531645ac7a63b2c1905072973b9318637884bf9e88cc0bdffa74';
+async function sha256(msg){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function doLogin(){
+  const u=document.getElementById('login-user').value.trim();
+  const p=document.getElementById('login-pass').value;
+  const uH=await sha256(u);
+  const pH=await sha256(p);
+  if(uH===U_HASH&&pH===P_HASH){
+    sessionStorage.setItem('dash_auth','1');
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('sync-status').style.display='block';
+    render();loadSheetsData();
+  }else{
+    const err=document.getElementById('login-error');
+    err.textContent='❌ Login ou senha incorretos';
+    err.style.display='block';
+    document.getElementById('login-pass').value='';
+  }
 }
+function checkAuth(){
+  if(sessionStorage.getItem('dash_auth')==='1'){
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    return true;
+  }
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  return false;
+}
+
+const META_SHEET_ID = '1ZdD6VTTczfr-52DhPxsDtFYEdxvALtJzhB-OPNl5Eow';
+const GAM_SHEET_ID = '1PGM4pFyzNBni7sR5QS3fMgZKvO4J7DsHdIPMJGAOYB4';
+const HORA_SHEET_ID = '1RVF6xPK9JWE7zo7vDEpNeFLCYtzZPfSM';
+let INIT_RAW = [];
+let INIT_HOURLY = [];
+async function fetchSheetAsXlsx(id) {
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Erro HTTP ' + resp.status);
+  const buf = await resp.arrayBuffer();
+  return XLSX.read(new Uint8Array(buf), {type:'array'});
+}
+async function loadSheetsData() {
+  const status = document.getElementById('sync-status');
+  if(status){status.textContent='⏳ Carregando Meta Ads do Sheets...';status.style.display='block';status.style.color='#f39c12';}
+  try {
+    const metaWb = await fetchSheetAsXlsx(META_SHEET_ID);
+    if(status) status.textContent='⏳ Carregando GAM do Sheets...';
+    const gamWb = await fetchSheetAsXlsx(GAM_SHEET_ID);
+    if(status) status.textContent='⏳ Carregando ROI por Hora do Sheets...';
+    const horaWb = await fetchSheetAsXlsx(HORA_SHEET_ID);
+    if(status) status.textContent='⏳ Processando dados...';
+    const metaRows = parseMetaExcel(metaWb);
+    const gamRows = parseGamExcel(gamWb);
+    const merged = mergeData([], metaRows, gamRows);
+    if(merged.length>0){INIT_RAW=merged;rawData=merged;}
+    const hourlyRows = parseHourlyExcel(horaWb);
+    if(hourlyRows.length>0){INIT_HOURLY=hourlyRows;hourlyData=hourlyRows;}
+    if(status){status.textContent='✅ Dados sincronizados do Google Sheets! ('+merged.length+' placement, '+hourlyRows.length+' hora)';status.style.color='#27ae60';setTimeout(()=>{status.style.display='none'},6000);}
+    render();
+  } catch(e) {
+    console.error('Erro Sheets:',e);
+    if(status){status.textContent='⚠️ Falha ao carregar Sheets: '+e.message;status.style.color='#e74c3c';setTimeout(()=>{status.style.display='none'},8000);}
+  }
+}
+function getMetaP(p,pl){if(p==='Feed')return'Feed '+(pl||'').charAt(0).toUpperCase()+(pl||'').slice(1).toLowerCase();return META_MAP[p]||p}
+function getGamP(u){if(!u)return'Outros';if(u.includes('utm_campaign=')&&!u.includes('utm_content='))return null;for(const[k,v]of Object.entries(GAM_MAP))if(u.includes(k))return v;return'Outros'}
+
+function parseMetaExcel(wb){const rows=[];wb.SheetNames.forEach(n=>{const num=n.replace(/[^0-9]/g,'');if(!num)return;const c='Campanha '+num;const s=XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:''});s.forEach(r=>{const d={};Object.keys(r).forEach(k=>{if(k!=null)d[String(k).trim()]=r[k]});const date=parseDate(d['Dia']);if(!date||date.length<8)return;const p=getMetaP(d['Posicionamento']||'',d['Plataforma']||'');if(!p)return;const sp=parseBRL(d['Valor usado (USD)']);const cl=Math.round(parseBRL(d['Cliques no link']));const im=Math.round(parseBRL(d['Impressões']));if(sp>0||cl>0)rows.push({c,d:date,p,ms:+sp.toFixed(4),mc:cl,mi:im,gr:0})})});return rows}
+function parseGamExcel(wb){const rows=[];wb.SheetNames.forEach(n=>{const num=n.replace(/[^0-9]/g,'');if(!num)return;const c='Campanha '+num;const s=XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:''});s.forEach(r=>{const d={};Object.keys(r).forEach(k=>{if(k!=null)d[String(k).trim()]=r[k]});const date=parseDate(d['Data']);if(!date||date.length<8)return;const u=d['Chaves-valor']||'';const p=getGamP(u);if(!p)return;const rev=parseBRL(d['Receita total de CPM e de CPC']||d['Receita']||0);if(rev>0)rows.push({c,d:date,p,ms:0,mc:0,mi:0,gr:+rev.toFixed(4)})})});return rows}
+function parseHourlyExcel(wb){const rows=[];wb.SheetNames.forEach(n=>{if(n==='Resumo Geral'||n==='Resumo por Dia')return;const m=n.match(/CAMPANHA(\d+)/i);if(!m)return;const c='Campanha '+m[1];const s=wb.Sheets[n];const data=XLSX.utils.sheet_to_json(s,{header:1,defval:''});let curDate=null;data.forEach(row=>{const cell=String(row[0]||'');const dm=cell.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(dm){curDate=`${dm[3]}-${dm[2]}-${dm[1]}`;return}if(!curDate||cell==='Hora')return;const hm=cell.match(/^(\d{2})h$/);if(!hm)return;const h=parseInt(hm[1]);const sp=parseFloat(row[1])||0;const rv=parseFloat(row[2])||0;if(sp>0||rv>0)rows.push({c,d:curDate,h,s:+sp.toFixed(4),r:+rv.toFixed(4)})})});return rows}
+
+function mergeData(existing,newMeta,newGam){const map={};const key=r=>r.c+'|||'+r.d+'|||'+r.p;existing.forEach(r=>{const k=key(r);if(!map[k])map[k]={c:r.c,d:r.d,p:r.p,ms:0,mc:0,mi:0,gr:0};map[k].ms+=r.ms;map[k].mc+=(r.mc||0);map[k].mi+=(r.mi||0);map[k].gr+=r.gr});newMeta.forEach(r=>{const k=key(r);if(!map[k])map[k]={c:r.c,d:r.d,p:r.p,ms:0,mc:0,mi:0,gr:0};map[k].ms+=r.ms;map[k].mc+=(r.mc||0);map[k].mi+=(r.mi||0)});newGam.forEach(r=>{const k=key(r);if(!map[k])map[k]={c:r.c,d:r.d,p:r.p,ms:0,mc:0,mi:0,gr:0};map[k].gr+=r.gr});return Object.values(map).filter(r=>r.ms>0||r.gr>0)}
+
+// Data processing
+function processPlacement(raw){
+  const daily=raw.map(r=>({...r,profit:+(r.gr-r.ms).toFixed(4),roas:r.ms>0?+(r.gr/r.ms).toFixed(2):r.gr>0?999:0}));
+  const cpMap={};daily.forEach(r=>{const k=r.c+'|||'+r.p;if(!cpMap[k])cpMap[k]={c:r.c,p:r.p,ms:0,mc:0,mi:0,gr:0};cpMap[k].ms+=r.ms;cpMap[k].mc+=(r.mc||0);cpMap[k].mi+=(r.mi||0);cpMap[k].gr+=r.gr});
+  const campPlace=Object.values(cpMap).map(r=>({...r,ms:+r.ms.toFixed(2),gr:+r.gr.toFixed(2),profit:+(r.gr-r.ms).toFixed(2),roas:r.ms>0?+(r.gr/r.ms).toFixed(2):0}));
+  const ctMap={};daily.forEach(r=>{if(!ctMap[r.c])ctMap[r.c]={c:r.c,ms:0,mc:0,gr:0};ctMap[r.c].ms+=r.ms;ctMap[r.c].mc+=(r.mc||0);ctMap[r.c].gr+=r.gr});
+  const campTotal=Object.values(ctMap).map(r=>({...r,ms:+r.ms.toFixed(2),gr:+r.gr.toFixed(2),profit:+(r.gr-r.ms).toFixed(2),roi:r.ms>0?+((r.gr-r.ms)/r.ms*100).toFixed(1):0,roas:r.ms>0?+(r.gr/r.ms).toFixed(2):0})).sort((a,b)=>a.c.localeCompare(b.c,undefined,{numeric:true}));
+  return{daily,campPlace,campTotal,campaigns:[...new Set(daily.map(r=>r.c))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),dates:[...new Set(daily.map(r=>r.d))].sort()};
+}
+
+// State
+let rawData=[...INIT_RAW];
+let hourlyData=[...INIT_HOURLY];
+let st={tab:0,sc:'all',sd:'all',cA:'Campanha 18',cB:'Campanha 19',sf:'profit',sdr:-1,dc:false,dA:'',dB:'',shc:'all',shd:'all',
+  mx:{impressoes:false,gasto:true,cliques:false,ctr:false,cpc:false,receita:true,lucro:true,roas:true,roi:false,delta:true}};
+
+function render(){
+  const d=processPlacement(rawData);
+  const{tab}=st;
+  const ts=d.campTotal.reduce((a,c)=>({s:a.s+c.ms,r:a.r+c.gr,c:a.c+c.mc}),{s:0,r:0,c:0});
+  const totals={spend:ts.s,revenue:ts.r,clicks:ts.c,profit:ts.r-ts.s,roi:ts.s>0?((ts.r-ts.s)/ts.s)*100:0,roas:ts.s>0?ts.r/ts.s:0};
+
+  let html=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+    <div style="background:linear-gradient(135deg,#16a34a,#eab308);width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px">📊</div>
+    <div><h1 style="font-size:20px;font-weight:800">ROI OFFERWALL STREET - GAS DO POVO</h1>
+    <p style="font-size:12px;color:var(--muted)">${d.campaigns.length} campanhas · ${d.dates.length} datas · Ativas: ${ACTIVE.map(c=>c.replace('Campanha ','')).join(', ')}</p></div></div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">Gasto Meta</div><div class="kpi-value">${fmt(totals.spend)}</div><div class="kpi-sub">${totals.clicks.toLocaleString()} cliques</div></div>
+    <div class="kpi"><div class="kpi-label">Receita GAM</div><div class="kpi-value" style="color:var(--green)">${fmt(totals.revenue)}</div></div>
+    <div class="kpi"><div class="kpi-label">Lucro</div><div class="kpi-value" style="color:${totals.profit>=0?'var(--green)':'var(--red)'}">${fmt(totals.profit)}</div><div class="kpi-sub">ROI: ${fmtPct(totals.roi)}</div></div>
+    <div class="kpi"><div class="kpi-label">ROAS</div><div class="kpi-value" style="color:${totals.roas>=1?'var(--green)':'var(--yellow)'}">${totals.roas.toFixed(2)}x</div></div>
+  </div>`;
+
+  const tabs=['Campanhas','Placement','Diário','Comparar','ROI por Hora','📊 Análise','🚀 Nova Campanha','Importar'];
+  html+=`<div class="tabs">${tabs.map((t,i)=>`<button class="tab ${tab===i?'active':''}" onclick="S('tab',${i})">${t}</button>`).join('')}<button onclick="loadSheetsData()" style="margin-left:auto;background:#27ae60;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700" title="Atualizar dados do Google Sheets">🔄 Sincronizar</button></div>`;
+
+  // TAB 0: Campaigns
+  if(tab===0){
+    html+=`<div class="card"><h3>Resumo por Campanha</h3><div class="scroll"><table><thead><tr><th class="left">Campanha</th><th>Gasto</th><th>Cliques</th><th>Receita</th><th>Lucro</th><th>ROI</th><th>ROAS</th><th>Status</th></tr></thead><tbody>`;
+    const sortedCamps=[...d.campTotal].sort((a,b)=>{const aA=ACTIVE.includes(a.c)?0:1;const bA=ACTIVE.includes(b.c)?0:1;if(aA!==bA)return aA-bA;return a.c.localeCompare(b.c,undefined,{numeric:true})});
+    sortedCamps.forEach(r=>{const isActive=ACTIVE.includes(r.c);html+=`<tr class="${r.profit>0?'pr':''}"><td style="font-weight:700">${dot(r.c)}${r.c} <span onclick="toggleActive('${r.c}')" style="font-size:9px;background:${isActive?'var(--green)':'var(--border)'};color:${isActive?'#fff':'var(--muted)'};padding:1px 5px;border-radius:3px;cursor:pointer;user-select:none" title="Clique pra ${isActive?'desativar':'ativar'}">${isActive?'ATIVA':'INATIVA'}</span></td><td class="mono right">${fmt(r.ms)}</td><td class="mono right">${r.mc}</td><td class="mono right" style="color:var(--green)">${fmt(r.gr)}</td><td class="mono right" style="font-weight:700;color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmt(r.profit)}</td><td class="right">${badge(r.roi)}</td><td class="right">${badge(r.roas,'roas')}</td><td style="text-align:center">${r.profit>0?'🟢':r.roas>=0.8?'🟡':'🔴'}</td></tr>`});
+    html+=`</tbody></table></div></div>`;
+  }
+
+  // TAB 1: Placement detail
+  if(tab===1){
+    const{sc,sf,sdr}=st;
+    html+=`<div class="filters">${campSelect('sc',d.campaigns,sc)}</div>`;
+    let rows=d.campPlace;if(sc!=='all')rows=rows.filter(r=>r.c===sc);
+    rows=[...rows].sort((a,b)=>{const av=a[sf],bv=b[sf];return(typeof av==='string'?av.localeCompare(bv):av-bv)*sdr});
+    html+=`<div class="card"><div class="scroll"><table><thead><tr><th class="left" onclick="DS('c')">Campanha</th><th class="left" onclick="DS('p')">Placement</th><th onclick="DS('ms')">Gasto</th><th onclick="DS('gr')">Receita</th><th onclick="DS('profit')">Lucro</th><th onclick="DS('roas')">ROAS</th></tr></thead><tbody>`;
+    rows.forEach(r=>{const icon=r.profit>0?'🟢':r.roas>=0.8?'🟡':'🔴';html+=`<tr class="${r.profit>0?'pr':''}"><td>${dot(r.c)}${r.c}</td><td style="font-weight:600">${icon} ${r.p}</td><td class="mono right">${fmt(r.ms)}</td><td class="mono right" style="color:var(--green)">${fmt(r.gr)}</td><td class="mono right" style="font-weight:700;color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmt(r.profit)}</td><td class="right">${badge(r.roas,'roas')}</td></tr>`});
+    html+=`</tbody></table></div></div>`;
+  }
+
+  // TAB 2: Daily
+  if(tab===2){
+    const{sc,sd,sf,sdr,dc,dA,dB,mx}=st;
+    const campDates=sc!=='all'?d.dates.filter(dt=>d.daily.some(r=>r.c===sc&&r.d===dt)):d.dates;
+    html+=`<div class="filters">${campSelect('sc',d.campaigns,sc)}`;
+    if(!dc)html+=`<input type="date" value="${sd==='all'?'':sd}" onchange="S('sd',this.value||'all')" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer">${sd!=='all'?` <button class="btn btn-outline" onclick="S('sd','all')" style="padding:5px 10px;font-size:10px">✕ Limpar data</button>`:''}`;
+    html+=`<button class="btn ${dc?'btn-yellow':'btn-outline'}" onclick="S('dc',${!dc})">📅 ${dc?'Voltar':'Comparar dias'}</button></div>`;
+    
+    if(!dc){
+      let rows=d.daily;if(sc!=='all')rows=rows.filter(r=>r.c===sc);if(sd!=='all')rows=rows.filter(r=>r.d===sd);
+      rows=[...rows].sort((a,b)=>(a[sf]-b[sf])*sdr);
+      html+=`<div class="card"><div class="scroll"><table><thead><tr><th class="left">Camp.</th><th class="left">Data</th><th class="left">Placement</th><th onclick="DS('ms')">Gasto</th><th onclick="DS('mc')">Cliques</th><th onclick="DS('gr')">Receita</th><th onclick="DS('profit')">Lucro</th><th onclick="DS('roas')">ROAS</th></tr></thead><tbody>`;
+      rows.forEach(r=>{html+=`<tr class="${r.profit>0?'pr':''}"><td style="font-size:11px">${dot(r.c)}${r.c.replace('Campanha ','C')}</td><td class="mono" style="font-size:11px">${r.d.slice(5)}</td><td style="font-size:11px">${r.p}</td><td class="mono right" style="font-size:11px">${fmt(r.ms)}</td><td class="mono right" style="font-size:11px">${r.mc||0}</td><td class="mono right" style="font-size:11px;color:var(--green)">${fmt(r.gr)}</td><td class="mono right" style="font-size:11px;font-weight:700;color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmt(r.profit)}</td><td class="right">${badge(r.roas,'roas')}</td></tr>`});
+      html+=`</tbody></table></div><div style="margin-top:8px;font-size:11px;color:var(--muted)">${rows.length} registros</div></div>`;
+    } else {
+      // Day comparison
+      const da=dA||campDates[campDates.length-1]||'';const db=dB||(campDates.length>=2?campDates[campDates.length-2]:'');
+      html+=`<div class="filters"><span style="color:var(--muted);font-size:12px">Dia A:</span><input type="date" value="${da}" onchange="S('dA',this.value)" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif"><b>vs</b><span style="color:var(--muted);font-size:12px">Dia B:</span><input type="date" value="${db}" onchange="S('dB',this.value)" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif"></div>`;
+      
+      const M=mx;const METRICS=[{k:'gasto',l:'Gasto',i:'💸'},{k:'cliques',l:'Cliques',i:'👆'},{k:'receita',l:'Receita',i:'💰'},{k:'lucro',l:'Lucro',i:'📊'},{k:'roas',l:'ROAS',i:'📈'},{k:'delta',l:'Δ Var',i:'🔄'}];
+      html+=`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px"><span style="font-size:11px;color:var(--muted);align-self:center;margin-right:4px">Métricas:</span>${METRICS.map(m=>`<button class="btn" onclick="TM('${m.k}')" style="padding:4px 10px;font-size:10px;${M[m.k]?'background:var(--blue);color:#fff;border:1px solid var(--blue)':'background:transparent;border:1px solid var(--border);color:var(--muted)'}">${m.i} ${m.l}</button>`).join('')}</div>`;
+
+      let rA=d.daily.filter(r=>r.d===da),rB=d.daily.filter(r=>r.d===db);
+      if(sc!=='all'){rA=rA.filter(r=>r.c===sc);rB=rB.filter(r=>r.c===sc)}
+      const agg=(rows)=>{const m={};rows.forEach(r=>{const k=(sc!=='all'?'':r.c+'|')+r.p;if(!m[k])m[k]={c:r.c,p:r.p,ms:0,mc:0,gr:0};m[k].ms+=r.ms;m[k].mc+=(r.mc||0);m[k].gr+=r.gr});return m};
+      const agA=agg(rA),agB=agg(rB);
+      const tA=rA.reduce((a,r)=>({s:a.s+r.ms,r:a.r+r.gr}),{s:0,r:0});
+      const tB=rB.reduce((a,r)=>({s:a.s+r.ms,r:a.r+r.gr}),{s:0,r:0});
+      const pA=tA.r-tA.s,pB=tB.r-tB.s;
+
+      html+=`<div class="grid-2">${[[da,tA,pA,'var(--blue)'],[db,tB,pB,'var(--yellow)']].map(([day,t,p,col])=>`<div class="card" style="border-top:3px solid ${col}"><div style="font-size:13px;font-weight:800;margin-bottom:8px">📅 ${day}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:5px;font-size:12px">${M.gasto?`<div><span style="color:var(--muted)">Gasto:</span> <b>${fmt(t.s)}</b></div>`:''}${M.receita?`<div><span style="color:var(--muted)">Receita:</span> <b style="color:var(--green)">${fmt(t.r)}</b></div>`:''}${M.lucro?`<div><span style="color:var(--muted)">Lucro:</span> <b style="color:${p>=0?'var(--green)':'var(--red)'}">${fmt(p)}</b></div>`:''}${M.roas?`<div><span style="color:var(--muted)">ROAS:</span> ${badge(t.s>0?t.r/t.s:0,'roas')}</div>`:''}</div></div>`).join('')}</div>`;
+
+      const allK=[...new Set([...Object.keys(agA),...Object.keys(agB)])].sort();
+      html+=`<div class="card"><h3>Comparação por Placement</h3><div class="scroll"><table><thead><tr><th class="left">Placement</th>`;
+      if(M.gasto)html+=`<th>A Gasto</th>`;if(M.receita)html+=`<th>A Receita</th>`;if(M.lucro)html+=`<th>A Lucro</th>`;if(M.roas)html+=`<th>A ROAS</th>`;
+      if(M.gasto)html+=`<th>B Gasto</th>`;if(M.receita)html+=`<th>B Receita</th>`;if(M.lucro)html+=`<th>B Lucro</th>`;if(M.roas)html+=`<th>B ROAS</th>`;
+      if(M.delta)html+=`<th>Δ Lucro</th><th>Tend.</th>`;
+      html+=`</tr></thead><tbody>`;
+      allK.forEach(k=>{const a=agA[k]||{ms:0,gr:0};const b=agB[k]||{ms:0,gr:0};if(a.ms===0&&b.ms===0&&a.gr===0&&b.gr===0)return;const pa=a.gr-a.ms,pb=b.gr-b.ms,ra=a.ms>0?a.gr/a.ms:0,rb=b.ms>0?b.gr/b.ms:0,dl=pa-pb;
+        html+=`<tr><td style="font-size:11px;font-weight:600">${k.includes('|')?k.split('|')[1]:k}</td>`;
+        if(M.gasto)html+=`<td class="mono right" style="font-size:11px">${fmt(a.ms)}</td>`;if(M.receita)html+=`<td class="mono right" style="font-size:11px;color:var(--green)">${fmt(a.gr)}</td>`;if(M.lucro)html+=`<td class="mono right" style="font-size:11px;color:${pa>=0?'var(--green)':'var(--red)'}">${fmt(pa)}</td>`;if(M.roas)html+=`<td class="right">${badge(ra,'roas')}</td>`;
+        if(M.gasto)html+=`<td class="mono right" style="font-size:11px">${fmt(b.ms)}</td>`;if(M.receita)html+=`<td class="mono right" style="font-size:11px;color:var(--green)">${fmt(b.gr)}</td>`;if(M.lucro)html+=`<td class="mono right" style="font-size:11px;color:${pb>=0?'var(--green)':'var(--red)'}">${fmt(pb)}</td>`;if(M.roas)html+=`<td class="right">${badge(rb,'roas')}</td>`;
+        if(M.delta){html+=`<td class="mono right" style="font-size:11px;color:${dl>=0?'var(--green)':'var(--red)'}">${dl>=0?'+':''}${dl.toFixed(2)}</td><td style="text-align:center">${dl>0.01?'🟢↑':dl<-0.01?'🔴↓':'➡️'}</td>`}
+        html+=`</tr>`});
+      html+=`</tbody></table></div></div>`;
+    }
+  }
+
+  // TAB 3: Compare campaigns
+  if(tab===3){
+    const{cA,cB}=st;
+    html+=`<div class="filters"><span style="color:var(--muted);font-size:12px">Comparar:</span>${campSelect('cA',d.campaigns,cA)}<b>vs</b>${campSelect('cB',d.campaigns,cB)}</div>`;
+    const tA=d.campTotal.find(r=>r.c===cA)||{ms:0,gr:0,profit:0,roi:0,roas:0,mc:0};const tB=d.campTotal.find(r=>r.c===cB)||{ms:0,gr:0,profit:0,roi:0,roas:0,mc:0};
+    html+=`<div class="grid-2">${[[cA,tA],[cB,tB]].map(([n,t])=>`<div class="card" style="border-top:3px solid ${CC[n]||'#666'}"><div style="font-size:14px;font-weight:800;margin-bottom:10px">${n}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px"><div>Gasto: <b>${fmt(t.ms)}</b></div><div>Receita: <b style="color:var(--green)">${fmt(t.gr)}</b></div><div>Lucro: <b style="color:${t.profit>=0?'var(--green)':'var(--red)'}">${fmt(t.profit)}</b></div><div>ROAS: ${badge(t.roas,'roas')}</div></div></div>`).join('')}</div>`;
+    const aR=d.campPlace.filter(r=>r.c===cA),bR=d.campPlace.filter(r=>r.c===cB);const ps=[...new Set([...aR,...bR].map(r=>r.p))].sort();
+    html+=`<div class="card"><h3>Por Placement</h3><div class="scroll"><table><thead><tr><th class="left">Placement</th><th>${cA.replace('Campanha ','C')} Gasto</th><th>${cA.replace('Campanha ','C')} Rev</th><th>${cA.replace('Campanha ','C')} ROAS</th><th>${cB.replace('Campanha ','C')} Gasto</th><th>${cB.replace('Campanha ','C')} Rev</th><th>${cB.replace('Campanha ','C')} ROAS</th><th>🏆</th></tr></thead><tbody>`;
+    ps.forEach(p=>{const a=aR.find(r=>r.p===p)||{ms:0,gr:0,roas:0};const b=bR.find(r=>r.p===p)||{ms:0,gr:0,roas:0};if(a.ms===0&&b.ms===0)return;const w=a.roas>b.roas?'A':b.roas>a.roas?'B':'-';html+=`<tr><td style="font-weight:600">${p}</td><td class="mono right">${fmt(a.ms)}</td><td class="mono right" style="color:var(--green)">${fmt(a.gr)}</td><td class="right">${badge(a.roas,'roas')}</td><td class="mono right">${fmt(b.ms)}</td><td class="mono right" style="color:var(--green)">${fmt(b.gr)}</td><td class="right">${badge(b.roas,'roas')}</td><td style="text-align:center;font-weight:700;color:${w==='A'?CC[cA]:w==='B'?CC[cB]:'var(--muted)'}">${w==='A'?cA.replace('Campanha ','C'):w==='B'?cB.replace('Campanha ','C'):'='}</td></tr>`});
+    html+=`</tbody></table></div></div>`;
+  }
+
+  // TAB 4: Hourly
+  if(tab===4){
+    const hRaw=hourlyData;const hCamps=[...new Set(hRaw.map(r=>r.c))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));const hDates=[...new Set(hRaw.map(r=>r.d))].sort();
+    const shc=st.shc||'all';const shd=st.shd||'all';
+    let hF=hRaw;if(shc!=='all')hF=hF.filter(r=>r.c===shc);if(shd!=='all')hF=hF.filter(r=>r.d===shd);
+    const byH={};for(let h=0;h<24;h++)byH[h]={s:0,r:0};hF.forEach(r=>{byH[r.h].s+=r.s;byH[r.h].r+=r.r});
+    const hData=[];for(let h=0;h<24;h++){const s=byH[h].s,r=byH[h].r;if(s>0||r>0)hData.push({h,l:String(h).padStart(2,'0')+'h',s:+s.toFixed(2),r:+r.toFixed(2),p:+(r-s).toFixed(2),roas:s>0?+(r/s).toFixed(2):r>0?999:0})}
+    const hT=hData.reduce((a,r)=>({s:a.s+r.s,r:a.r+r.r}),{s:0,r:0});const hP=hT.r-hT.s;
+    const best=[...hData].filter(r=>r.s>0).sort((a,b)=>b.p-a.p)[0];
+    const worst=[...hData].filter(r=>r.s>0).sort((a,b)=>a.p-b.p)[0];
+    const bestRoas=[...hData].filter(r=>r.s>0.5).sort((a,b)=>b.roas-a.roas)[0];
+
+    html+=`<div class="filters">${campSelect('shc',hCamps,shc)}<input type="date" value="${shd==='all'?'':shd}" onchange="S('shd',this.value||'all')" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer">${shd!=='all'?` <button class="btn btn-outline" onclick="S('shd','all')" style="padding:5px 10px;font-size:10px">✕ Limpar</button>`:''}</div>`;
+    html+=`<div class="kpis"><div class="kpi"><div class="kpi-label">Gasto</div><div class="kpi-value">${fmt(hT.s)}</div></div><div class="kpi"><div class="kpi-label">Receita</div><div class="kpi-value" style="color:var(--green)">${fmt(hT.r)}</div></div><div class="kpi"><div class="kpi-label">Lucro</div><div class="kpi-value" style="color:${hP>=0?'var(--green)':'var(--red)'}">${fmt(hP)}</div></div><div class="kpi"><div class="kpi-label">Melhor Hora</div><div class="kpi-value" style="color:var(--green)">${best?best.l:'--'}</div><div class="kpi-sub">${best?fmt(best.p)+' lucro':''}</div></div><div class="kpi"><div class="kpi-label">Melhor ROAS</div><div class="kpi-value" style="color:var(--green)">${bestRoas?bestRoas.l:'--'}</div><div class="kpi-sub">${bestRoas?bestRoas.roas+'x':''}</div></div></div>`;
+
+    // Bar chart
+    const mx=Math.max(...hData.map(r=>Math.max(r.s,r.r)),0.01);
+    html+=`<div class="card"><h3>⏰ Receita × Gasto por Hora</h3><div style="display:flex;gap:3px;align-items:end;height:200px;padding:10px 0">`;
+    for(let h=0;h<24;h++){const r=hData.find(x=>x.h===h)||{s:0,r:0,p:0};const sH=Math.max(r.s/mx*160,0);const rH=Math.max(r.r/mx*160,0);
+      html+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;justify-content:end" title="${String(h).padStart(2,'0')}h: Gasto $${r.s.toFixed(2)} | Receita $${r.r.toFixed(2)} | Lucro $${r.p.toFixed(2)}"><div style="display:flex;gap:1px;align-items:end;height:160px"><div style="width:7px;height:${sH}px;background:var(--red);border-radius:2px 2px 0 0;opacity:.7"></div><div style="width:7px;height:${rH}px;background:var(--green);border-radius:2px 2px 0 0;opacity:.7"></div></div><div style="font-size:8px;color:${r.s>0||r.r>0?(r.p>=0?'var(--green)':'var(--red)'):'var(--muted)'};font-family:monospace;font-weight:700">${String(h).padStart(2,'0')}</div></div>`}
+    html+=`</div><div style="display:flex;gap:16px;justify-content:center;margin-top:8px"><span style="font-size:11px;color:var(--red)">■ Gasto</span><span style="font-size:11px;color:var(--green)">■ Receita</span></div></div>`;
+
+    // Table
+    html+=`<div class="card"><h3>📊 Detalhamento por Hora</h3><div class="scroll"><table><thead><tr><th class="left">Hora</th><th>Gasto</th><th>Receita</th><th>Lucro</th><th>ROAS</th><th>% Gasto</th><th>% Receita</th></tr></thead><tbody>`;
+    hData.forEach(r=>{html+=`<tr class="${r.p>0?'pr':''}"><td style="font-weight:700">${r.l}</td><td class="mono right">${fmt(r.s)}</td><td class="mono right" style="color:var(--green)">${fmt(r.r)}</td><td class="mono right" style="font-weight:700;color:${r.p>=0?'var(--green)':'var(--red)'}">${fmt(r.p)}</td><td class="right">${badge(r.roas,'roas')}</td><td class="mono right" style="font-size:11px">${hT.s>0?(r.s/hT.s*100).toFixed(1):'0'}%</td><td class="mono right" style="font-size:11px">${hT.r>0?(r.r/hT.r*100).toFixed(1):'0'}%</td></tr>`});
+    html+=`</tbody></table></div></div>`;
+
+    // Per campaign
+    const chMap={};hF.forEach(r=>{const k=r.c+'|||'+r.h;if(!chMap[k])chMap[k]={c:r.c,h:r.h,s:0,r:0};chMap[k].s+=r.s;chMap[k].r+=r.r});
+    const chRows=Object.values(chMap).map(r=>({...r,s:+r.s.toFixed(2),r:+r.r.toFixed(2),p:+(r.r-r.s).toFixed(2),roas:r.s>0?+(r.r/r.s).toFixed(2):0})).sort((a,b)=>a.h-b.h||a.c.localeCompare(b.c,undefined,{numeric:true}));
+    html+=`<div class="card"><h3>🏷️ Campanha × Hora</h3><div class="scroll" style="max-height:400px"><table><thead><tr><th class="left">Campanha</th><th class="left">Hora</th><th>Gasto</th><th>Receita</th><th>Lucro</th><th>ROAS</th></tr></thead><tbody>`;
+    chRows.forEach(r=>{if(r.s===0&&r.r===0)return;html+=`<tr class="${r.p>0?'pr':''}"><td style="font-size:11px">${dot(r.c)}${r.c}</td><td class="mono" style="font-size:11px">${String(r.h).padStart(2,'0')}h</td><td class="mono right" style="font-size:11px">${fmt(r.s)}</td><td class="mono right" style="font-size:11px;color:var(--green)">${fmt(r.r)}</td><td class="mono right" style="font-size:11px;font-weight:700;color:${r.p>=0?'var(--green)':'var(--red)'}">${fmt(r.p)}</td><td class="right">${badge(r.roas,'roas')}</td></tr>`});
+    html+=`</tbody></table></div></div>`;
+  }
+
+  // TAB 5: Analysis & Recommendations
+  if(tab===5){
+    const{sc}=st;
+    const activeCamps=ACTIVE;
+    const onlyActive=st.analysisActive!==false;
+    const filterCamps=st.analysisActive==='custom'?(st.analysisCustom||[...ACTIVE]):st.analysisActive===true?ACTIVE:null;
+    
+    // Aggregate by placement
+    const byP={};
+    rawData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      if(!byP[r.p])byP[r.p]={p:r.p,spend:0,revenue:0,clicks:0,imps:0,camps:new Set()};
+      byP[r.p].spend+=r.ms;byP[r.p].revenue+=r.gr;byP[r.p].clicks+=(r.mc||0);byP[r.p].imps+=(r.mi||0);byP[r.p].camps.add(r.c);
+    });
+    
+    const placements=Object.values(byP).map(r=>{
+      const profit=r.revenue-r.spend;
+      const roas=r.spend>0?r.revenue/r.spend:0;
+      const totalSpend=Object.values(byP).reduce((a,x)=>a+x.spend,0);
+      const pctBudget=totalSpend>0?r.spend/totalSpend*100:0;
+      // Score: ROAS weighted by log of spend volume
+      const score=r.spend>0.5?roas*Math.log(r.spend+1):roas*0.1;
+      let rec='excluir';
+      if(roas>=1.05&&r.spend>1)rec='incluir';
+      else if(roas>=0.95&&r.spend>1)rec='testar';
+      else if(roas>=0.85&&r.spend>2)rec='testar';
+      return{...r,profit:+profit.toFixed(2),roas:+roas.toFixed(2),pctBudget:+pctBudget.toFixed(1),score:+score.toFixed(2),rec,camps:r.camps.size};
+    }).sort((a,b)=>b.score-a.score);
+    
+    const incluir=placements.filter(r=>r.rec==='incluir');
+    const testar=placements.filter(r=>r.rec==='testar');
+    const excluir=placements.filter(r=>r.rec==='excluir');
+
+    const aMode=st.analysisActive===true?'active':st.analysisActive===false?'all':'custom';
+    const customCamps=st.analysisCustom||[...activeCamps];
+    const allCampsAnalysis=[...new Set(rawData.map(r=>r.c))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    html+=`<div class="filters" style="flex-wrap:wrap;gap:6px">
+      <button class="btn ${aMode==='active'?'btn-green':'btn-outline'}" onclick="st.analysisActive=true;render()">Só ativas (${activeCamps.length})</button>
+      <button class="btn ${aMode==='all'?'btn-green':'btn-outline'}" onclick="st.analysisActive=false;render()">Todas (${allCampsAnalysis.length})</button>
+      <button class="btn ${aMode==='custom'?'btn-green':'btn-outline'}" onclick="st.analysisActive='custom';if(!st.analysisCustom)st.analysisCustom=[...ACTIVE];render()">Selecionar</button>
+    </div>`;
+    if(aMode==='custom'){
+      html+=`<div style="background:var(--card);border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <span style="font-size:12px;font-weight:700;margin-right:4px">Campanhas:</span>
+        ${allCampsAnalysis.map(c=>{const checked=customCamps.includes(c);const num=c.replace('Campanha ','');const isAct=ACTIVE.includes(c);return`<label style="display:flex;align-items:center;gap:3px;font-size:12px;padding:4px 8px;border-radius:6px;cursor:pointer;background:${checked?(isAct?'var(--green)':'#6c757d'):'var(--bg)'};color:${checked?'#fff':'var(--muted)'}"><input type="checkbox" ${checked?'checked':''} onchange="if(!st.analysisCustom)st.analysisCustom=[...ACTIVE];if(this.checked){st.analysisCustom.push('${c}')}else{st.analysisCustom=st.analysisCustom.filter(x=>x!=='${c}')};render()" style="display:none">${num}</label>`}).join('')}
+        <button onclick="st.analysisCustom=[...ACTIVE];render()" style="font-size:11px;background:none;border:1px solid var(--muted);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:8px">Reset</button>
+      </div>`;
+    }
+
+    // Summary cards
+    const totalSpend=placements.reduce((a,r)=>a+r.spend,0);
+    const totalRev=placements.reduce((a,r)=>a+r.revenue,0);
+    html+=`<div class="kpis">
+      <div class="kpi"><div class="kpi-label">Placements Lucrativos</div><div class="kpi-value" style="color:var(--green)">${incluir.length}</div></div>
+      <div class="kpi"><div class="kpi-label">Pra Testar</div><div class="kpi-value" style="color:var(--yellow)">${testar.length}</div></div>
+      <div class="kpi"><div class="kpi-label">Excluir</div><div class="kpi-value" style="color:var(--red)">${excluir.length}</div></div>
+      <div class="kpi"><div class="kpi-label">ROAS Geral</div><div class="kpi-value" style="color:${totalSpend>0&&totalRev/totalSpend>=1?'var(--green)':'var(--red)'}">${totalSpend>0?(totalRev/totalSpend).toFixed(2):'0'}x</div></div>
+    </div>`;
+
+    // Recommendation sections
+    const renderSection=(title,icon,color,items,borderColor)=>{
+      if(items.length===0)return'';
+      let s=`<div class="card" style="border-left:4px solid ${borderColor}"><h3>${icon} ${title}</h3><div class="scroll"><table><thead><tr><th class="left">Placement</th><th>Gasto</th><th>Receita</th><th>Lucro</th><th>ROAS</th><th>% Budget</th><th>Campanhas</th><th>Score</th></tr></thead><tbody>`;
+      items.forEach((r,i)=>{
+        const medal=i===0&&title.includes('Incluir')?'🥇':i===1&&title.includes('Incluir')?'🥈':i===2&&title.includes('Incluir')?'🥉':'';
+        s+=`<tr class="${r.profit>0?'pr':''}"><td style="font-weight:700">${medal} ${r.p}</td><td class="mono right">${fmt(r.spend)}</td><td class="mono right" style="color:var(--green)">${fmt(r.revenue)}</td><td class="mono right" style="font-weight:700;color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmt(r.profit)}</td><td class="right">${badge(r.roas,'roas')}</td><td class="mono right">${r.pctBudget}%</td><td class="mono right">${r.camps}</td><td class="mono right" style="color:var(--yellow)">${r.score}</td></tr>`});
+      s+=`</tbody></table></div></div>`;
+      return s;
+    };
+    
+    html+=renderSection('✅ Incluir na campanha teste — ROAS consistente','','var(--green)',incluir,'var(--green)');
+    html+=renderSection('⚠️ Testar com cautela — potencial mas instável','','var(--yellow)',testar,'var(--yellow)');
+    html+=renderSection('❌ Excluir — não monetiza ou prejuízo','','var(--red)',excluir,'var(--red)');
+
+    // Config suggestion
+    html+=`<div class="card" style="background:linear-gradient(135deg,rgba(22,163,74,.08),rgba(37,99,235,.08))">
+      <h3>🎯 Config Sugerida no Meta Ads</h3>
+      <p style="font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:12px">Para a próxima campanha, use <b style="color:var(--text)">Posicionamentos Manuais</b> e selecione apenas:</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <p style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">✅ Selecionar:</p>
+          <div style="font-size:12px;color:var(--muted);line-height:2">
+            ${incluir.map(r=>`<div>• <b style="color:var(--text)">${r.p}</b> — ROAS ${r.roas}x, ${r.pctBudget}% do budget</div>`).join('')}
+            ${testar.map(r=>`<div>• <b style="color:var(--yellow)">${r.p}</b> — testar com budget limitado (ROAS ${r.roas}x)</div>`).join('')}
+          </div>
+        </div>
+        <div>
+          <p style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ Não selecionar:</p>
+          <div style="font-size:12px;color:var(--muted);line-height:2">
+            ${excluir.map(r=>`<div>• <s>${r.p}</s>${r.spend>0?' — ROAS '+r.roas+'x':' — $0 receita'}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    // Per-campaign breakdown for active campaigns
+    // Report buttons
+    html+=`<div class="card" style="padding:24px">
+      <h3 style="text-align:center;margin-bottom:16px">📋 Gerar Relatórios</h3>
+      <div class="grid-2">
+        <div style="text-align:center;padding:20px;background:var(--dark);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:28px;margin-bottom:8px">📍</div>
+          <p style="font-size:13px;font-weight:700;margin-bottom:6px">Análise por Placement</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Ranking de placements, recomendações de incluir/excluir, config sugerida pro Meta Ads</p>
+          <button class="btn btn-yellow" onclick="generatePlacementReport(${JSON.stringify(incluir.map(r=>({p:r.p,roas:r.roas,profit:r.profit,pctBudget:r.pctBudget,spend:r.spend}))).replace(/"/g,'&quot;')},${JSON.stringify(testar.map(r=>({p:r.p,roas:r.roas,profit:r.profit,pctBudget:r.pctBudget,spend:r.spend}))).replace(/"/g,'&quot;')},${JSON.stringify(excluir.map(r=>({p:r.p,roas:r.roas,profit:r.profit,spend:r.spend}))).replace(/"/g,'&quot;')},${totalSpend>0?(totalRev/totalSpend).toFixed(2):'0'},${totalSpend.toFixed(2)},${totalRev.toFixed(2)},${(totalRev-totalSpend).toFixed(2)},${onlyActive})" style="padding:10px 24px">📋 Gerar Relatório Placement</button>
+        </div>
+        <div style="text-align:center;padding:20px;background:var(--dark);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:28px;margin-bottom:8px">⏰</div>
+          <p style="font-size:13px;font-weight:700;margin-bottom:6px">Análise por Hora</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Melhores e piores horários, janelas de lucro, recomendação de programação de anúncios</p>
+          <button class="btn btn-yellow" onclick="generateHourlyReport(${onlyActive})" style="padding:10px 24px">📋 Gerar Relatório por Hora</button>
+        </div>
+      </div>
+    </div>`;
+    html+=`<div id="report-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;padding:20px"><div style="background:var(--card);border-radius:16px;padding:24px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;border:1px solid var(--border)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3 style="margin:0" id="report-title">📋 Relatório</h3><button onclick="document.getElementById('report-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div><pre id="report-text" style="white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--text);background:var(--dark);padding:16px;border-radius:8px;border:1px solid var(--border)"></pre><div style="display:flex;gap:8px;margin-top:16px"><button class="btn btn-green" onclick="copyReport()">📋 Copiar Texto</button><button class="btn btn-outline" onclick="document.getElementById('report-modal').style.display='none'">Fechar</button></div><div id="copy-status" style="margin-top:8px"></div></div></div>`;
+
+    html+=`<div class="card"><h3>🏷️ Detalhamento por Campanha Ativa</h3>`;
+    activeCamps.forEach(camp=>{
+      const campRows=rawData.filter(r=>r.c===camp);
+      if(campRows.length===0){html+=`<div style="margin:12px 0;font-size:12px;color:var(--muted)">${dot(camp)}${camp}: <span style="color:var(--yellow)">Sem dados ainda</span></div>`;return}
+      const cpMap={};campRows.forEach(r=>{if(!cpMap[r.p])cpMap[r.p]={p:r.p,spend:0,revenue:0};cpMap[r.p].spend+=r.ms;cpMap[r.p].revenue+=r.gr});
+      const cpRows=Object.values(cpMap).map(r=>({...r,profit:+(r.revenue-r.spend).toFixed(2),roas:r.spend>0?+(r.revenue/r.spend).toFixed(2):0})).sort((a,b)=>b.profit-a.profit);
+      const campSpend=cpRows.reduce((a,r)=>a+r.spend,0);const campRev=cpRows.reduce((a,r)=>a+r.revenue,0);
+      html+=`<div style="margin:16px 0"><div style="font-size:13px;font-weight:700;margin-bottom:8px">${dot(camp)}${camp} <span style="font-size:11px;color:var(--muted)">${fmt(campSpend)} gasto | ${fmt(campRev)} receita | ROAS ${campSpend>0?(campRev/campSpend).toFixed(2):'0'}x</span></div>`;
+      html+=`<div style="display:flex;gap:6px;flex-wrap:wrap">`;
+      cpRows.forEach(r=>{if(r.spend===0&&r.revenue===0)return;
+        const color=r.profit>0?'var(--green)':r.roas>=0.85?'var(--yellow)':'var(--red)';
+        const icon=r.profit>0?'✅':r.roas>=0.85?'⚠️':'❌';
+        html+=`<div style="background:var(--dark);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;min-width:140px">
+          <div style="font-weight:700;margin-bottom:4px">${icon} ${r.p}</div>
+          <div style="color:var(--muted)">Gasto: ${fmt(r.spend)}</div>
+          <div style="color:${color};font-weight:700">Lucro: ${fmt(r.profit)} | ${r.roas}x</div>
+        </div>`;
+      });
+      html+=`</div></div>`;
+    });
+    html+=`</div>`;
+
+
+
+    // STABILITY ANALYSIS - added to Analysis tab
+    // RPM Alert
+    const dailyRPM={};
+    rawData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      if(!dailyRPM[r.d])dailyRPM[r.d]={d:r.d,spend:0,rev:0,imps:0};
+      dailyRPM[r.d].spend+=r.ms;dailyRPM[r.d].rev+=r.gr;dailyRPM[r.d].imps+=(r.mi||0);
+    });
+    const rpmDays=Object.values(dailyRPM).map(r=>({...r,rpm:r.imps>0?r.rev/(r.imps/1000):0,roas:r.spend>0?r.rev/r.spend:0})).sort((a,b)=>a.d.localeCompare(b.d));
+    const avgRPM=rpmDays.length>0?rpmDays.reduce((a,r)=>a+r.rpm,0)/rpmDays.length:0;
+    const lastDay=rpmDays[rpmDays.length-1];
+    const rpmAlert=lastDay&&lastDay.rpm<avgRPM*0.7;
+    const roasAlert=lastDay&&lastDay.roas<0.85;
+
+    html+=`<div class="card" style="border-top:3px solid ${rpmAlert||roasAlert?'var(--red)':'var(--green)'}">
+      <h3>🚨 Alertas em Tempo Real</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado nos dados do último dia (${lastDay?lastDay.d:'--'})</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div style="background:${rpmAlert?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${rpmAlert?'#721c24':'#155724'}">${rpmAlert?'⚠️ RPM BAIXO':'✅ RPM OK'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?'$'+lastDay.rpm.toFixed(2):'--'}</div>
+          <div style="font-size:10px;color:${rpmAlert?'#721c24':'#155724'}">Média: $${avgRPM.toFixed(2)}</div>
+        </div>
+        <div style="background:${roasAlert?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${roasAlert?'#721c24':'#155724'}">${roasAlert?'⚠️ ROAS BAIXO':'✅ ROAS OK'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?lastDay.roas.toFixed(2)+'x':'--'}</div>
+          <div style="font-size:10px;color:${roasAlert?'#721c24':'#155724'}">Mínimo ideal: 0.85x</div>
+        </div>
+        <div style="background:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#f8d7da':'#d4edda'};padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#721c24':'#155724'}">${lastDay&&(lastDay.rev-lastDay.spend)<0?'⚠️ DIA NEGATIVO':'✅ DIA POSITIVO'}</div>
+          <div style="font-size:18px;font-weight:800;margin:4px 0">${lastDay?'$'+(lastDay.rev-lastDay.spend).toFixed(2):'--'}</div>
+          <div style="font-size:10px;color:${lastDay&&(lastDay.rev-lastDay.spend)<0?'#721c24':'#155724'}">Lucro do dia</div>
+        </div>
+      </div>
+    </div>`;
+
+    // STABILITY SCORE per placement
+    const plByDay={};
+    rawData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      const k=r.p;
+      if(!plByDay[k])plByDay[k]={};
+      if(!plByDay[k][r.d])plByDay[k][r.d]={spend:0,rev:0};
+      plByDay[k][r.d].spend+=r.ms;plByDay[k][r.d].rev+=r.gr;
+    });
+    const plStability=Object.entries(plByDay).map(([p,days])=>{
+      const dArr=Object.values(days).map(d=>({roas:d.spend>0?d.rev/d.spend:0,profit:d.rev-d.spend}));
+      const nDays=dArr.length;
+      const profitDays=dArr.filter(d=>d.profit>0).length;
+      const avgRoas=dArr.reduce((a,d)=>a+d.roas,0)/nDays;
+      const variance=dArr.reduce((a,d)=>a+Math.pow(d.roas-avgRoas,2),0)/nDays;
+      const stdDev=Math.sqrt(variance);
+      const consistency=nDays>0?profitDays/nDays*100:0;
+      const cv=avgRoas>0?stdDev/avgRoas:999;
+      // Stability score: consistency weighted, penalize high CV
+      const score=consistency*(1-Math.min(cv,2)/2);
+      const totalSpend=Object.values(days).reduce((a,d)=>a+d.spend,0);
+      return{p,nDays,profitDays,avgRoas:+avgRoas.toFixed(2),stdDev:+stdDev.toFixed(2),consistency:+consistency.toFixed(0),cv:+cv.toFixed(2),score:+score.toFixed(0),totalSpend};
+    }).filter(r=>r.totalSpend>1).sort((a,b)=>b.score-a.score);
+
+    html+=`<div class="card">
+      <h3>📊 Score de Estabilidade por Placement</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Mede a consistência do ROAS dia a dia. Score alto = mais previsível e lucrativo.</p>
+      <div class="scroll"><table><thead><tr>
+        <th class="left">Placement</th>
+        <th>Score</th>
+        <th>Dias</th>
+        <th>Dias +</th>
+        <th>Consist.</th>
+        <th>ROAS médio</th>
+        <th>Variação</th>
+        <th>Veredicto</th>
+      </tr></thead><tbody>`;
+    plStability.forEach(r=>{
+      const verdict=r.score>=60?'🟢 Estável':r.score>=30?'🟡 Oscila':'🔴 Instável';
+      const color=r.score>=60?'var(--green)':r.score>=30?'var(--yellow)':'var(--red)';
+      html+=`<tr><td style="font-weight:600">${r.p}</td>
+        <td style="text-align:center"><span style="background:${color};color:#fff;padding:3px 8px;border-radius:4px;font-size:12px;font-weight:800">${r.score}</span></td>
+        <td class="mono right">${r.nDays}</td>
+        <td class="mono right" style="color:var(--green)">${r.profitDays}</td>
+        <td class="mono right">${r.consistency}%</td>
+        <td class="right">${badge(r.avgRoas,'roas')}</td>
+        <td class="mono right" style="font-size:11px;color:${r.cv>0.5?'var(--red)':'var(--green)'}">${r.cv<0.3?'Baixa':r.cv<0.6?'Média':'Alta'} (${r.cv})</td>
+        <td style="font-size:12px">${verdict}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div></div>`;
+
+    // STABLE HOURS analysis
+    const hByDay={};
+    hourlyData.forEach(r=>{
+      if(filterCamps&&!filterCamps.includes(r.c))return;
+      const k=r.h;
+      if(!hByDay[k])hByDay[k]={};
+      const day=r.d||'unknown';
+      if(!hByDay[k][day])hByDay[k][day]={s:0,r:0};
+      hByDay[k][day].s+=r.s;hByDay[k][day].r+=r.r;
+    });
+    const hStability=Object.entries(hByDay).map(([h,days])=>{
+      const dArr=Object.values(days).map(d=>({profit:d.r-d.s,roas:d.s>0?d.r/d.s:0}));
+      const nDays=dArr.length;
+      const profitDays=dArr.filter(d=>d.profit>0).length;
+      const consistency=nDays>0?profitDays/nDays*100:0;
+      const avgProfit=dArr.reduce((a,d)=>a+d.profit,0)/nDays;
+      const avgRoas=dArr.reduce((a,d)=>a+d.roas,0)/nDays;
+      const variance=dArr.reduce((a,d)=>a+Math.pow(d.profit-avgProfit,2),0)/nDays;
+      const stdDev=Math.sqrt(variance);
+      const totalSpend=Object.values(days).reduce((a,d)=>a+d.s,0);
+      return{h:+h,nDays,profitDays,consistency:+consistency.toFixed(0),avgProfit:+avgProfit.toFixed(2),avgRoas:+avgRoas.toFixed(2),stdDev:+stdDev.toFixed(2),totalSpend};
+    }).filter(r=>r.totalSpend>0.5).sort((a,b)=>a.h-b.h);
+
+    const safeHours=hStability.filter(r=>r.consistency>=70&&r.avgProfit>0);
+    const riskyHours=hStability.filter(r=>r.consistency<50||r.avgProfit<0);
+    const midHours=hStability.filter(r=>r.consistency>=50&&r.consistency<70);
+
+    html+=`<div class="card">
+      <h3>⏰ Horários Seguros vs Instáveis</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Horas com lucro consistente (≥70% dos dias) vs horas imprevisíveis</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">🟢 SEGUROS (${safeHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${safeHours.map(r=>'<span style="background:#d4edda;color:#155724;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:8px">🟡 OSCILAM (${midHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${midHours.map(r=>'<span style="background:#fff3cd;color:#856404;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 INSTÁVEIS (${riskyHours.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            ${riskyHours.map(r=>'<span style="background:#f8d7da;color:#721c24;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace" title="'+r.consistency+'% dos dias com lucro">'+String(r.h).padStart(2,'0')+'h</span>').join('')}
+          </div>
+        </div>
+      </div>
+      <div class="scroll"><table><thead><tr>
+        <th class="left">Hora</th>
+        <th>Dias analisados</th>
+        <th>Dias com lucro</th>
+        <th>Consistência</th>
+        <th>Lucro médio/dia</th>
+        <th>ROAS médio</th>
+        <th>Veredicto</th>
+      </tr></thead><tbody>`;
+    hStability.forEach(r=>{
+      const verdict=r.consistency>=70&&r.avgProfit>0?'🟢 Seguro':r.consistency>=50?'🟡 Oscila':'🔴 Instável';
+      html+=`<tr><td style="font-weight:700;font-family:monospace">${String(r.h).padStart(2,'0')}:00</td>
+        <td class="mono right">${r.nDays}</td>
+        <td class="mono right" style="color:var(--green)">${r.profitDays}</td>
+        <td class="right"><span style="background:${r.consistency>=70?'var(--green)':r.consistency>=50?'var(--yellow)':'var(--red)'};color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700">${r.consistency}%</span></td>
+        <td class="mono right" style="color:${r.avgProfit>=0?'var(--green)':'var(--red)'}">$${r.avgProfit}</td>
+        <td class="right">${badge(r.avgRoas,'roas')}</td>
+        <td style="font-size:12px">${verdict}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div></div>`;
+
+
+
+
+  }
+
+  // TAB 6: Nova Campanha
+  if(tab===6){
+    const filterCampsGen=ACTIVE;
+    const byPGen={};
+    rawData.forEach(r=>{
+      if(!filterCampsGen.includes(r.c))return;
+      if(!byPGen[r.p])byPGen[r.p]={p:r.p,spend:0,revenue:0};
+      byPGen[r.p].spend+=r.ms;byPGen[r.p].revenue+=r.gr;
+    });
+    const plGen=Object.values(byPGen).map(r=>({...r,roas:r.spend>0?r.revenue/r.spend:0,profit:r.revenue-r.spend})).sort((a,b)=>b.roas-a.roas);
+    const goodPl=plGen.filter(r=>r.roas>=1.0&&r.spend>1);
+    const testPl=plGen.filter(r=>r.roas>=0.85&&r.roas<1.0&&r.spend>1);
+    const badPl=plGen.filter(r=>r.roas<0.85||r.spend<=1);
+    const hAgg={};
+    hourlyData.forEach(r=>{
+      if(!filterCampsGen.includes(r.c))return;
+      if(!hAgg[r.h])hAgg[r.h]={h:r.h,s:0,r:0};
+      hAgg[r.h].s+=r.s;hAgg[r.h].r+=r.r;
+    });
+    const hArr=Object.values(hAgg).map(r=>({...r,p:r.r-r.s,roas:r.s>0?r.r/r.s:0})).sort((a,b)=>b.p-a.p);
+    const bestHours=hArr.filter(r=>r.p>0).map(r=>String(r.h).padStart(2,'0')+':00');
+    const worstHours=hArr.filter(r=>r.p<0).sort((a,b)=>a.p-b.p).map(r=>String(r.h).padStart(2,'0')+':00');
+    const allCampNums=rawData.map(r=>parseInt(r.c.replace('Campanha ',''))).filter(n=>!isNaN(n));
+    const nextNum=Math.max(...allCampNums)+1;
+    if(!st.genName)st.genName='Campanha '+nextNum;
+    if(!st.genBudget)st.genBudget='10';
+    if(!st.genObjt)st.genObjt='OUTCOME_TRAFFIC';
+
+    html+=`<div class="card" style="border-top:3px solid var(--green)">
+      <h3 style="margin-bottom:4px">🚀 Gerador de Configuração de Campanha</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Monta o setup otimizado baseado nos seus dados de ROI. Copie e aplique no Gerenciador de Anúncios do Meta.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Nome da Campanha</label>
+          <input type="text" value="${st.genName||''}" onchange="st.genName=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box"></div>
+        <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Orçamento Diário (USD)</label>
+          <input type="number" value="${st.genBudget||'10'}" onchange="st.genBudget=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" min="1" step="1"></div>
+      </div>
+      <div style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Objetivo</label>
+        <select onchange="st.genObjt=this.value;render()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
+          <option value="OUTCOME_TRAFFIC" ${st.genObjt==='OUTCOME_TRAFFIC'?'selected':''}>Tráfego</option>
+          <option value="OUTCOME_ENGAGEMENT" ${st.genObjt==='OUTCOME_ENGAGEMENT'?'selected':''}>Engajamento</option>
+          <option value="OUTCOME_LEADS" ${st.genObjt==='OUTCOME_LEADS'?'selected':''}>Leads</option>
+        </select>
+      </div>
+    </div>`;
+
+    html+=`<div class="card"><h3>📍 Placements Recomendados</h3><p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado no ROAS das campanhas ativas</p>`;
+    if(goodPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:var(--green)">✅ USAR (ROAS ≥ 1.0x)</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${goodPl.map(p=>`<span style="background:#d4edda;color:#155724;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    if(testPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:#f39c12">⚠️ TESTAR (ROAS 0.85-1.0x)</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${testPl.map(p=>`<span style="background:#fff3cd;color:#856404;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    if(badPl.length>0){html+=`<div style="margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:var(--red)">❌ EVITAR</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${badPl.map(p=>`<span style="background:#f8d7da;color:#721c24;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600">${p.p} <span style="opacity:.7">${p.roas.toFixed(2)}x</span></span>`).join('')}</div></div>`}
+    html+=`</div>`;
+
+    html+=`<div class="card"><h3>⏰ Horários Recomendados</h3><p style="font-size:11px;color:var(--muted);margin-bottom:12px">Baseado no lucro por hora</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><span style="font-size:12px;font-weight:700;color:var(--green)">✅ Melhores horas</span><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${bestHours.slice(0,10).map(h=>`<span style="background:#d4edda;color:#155724;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace">${h}</span>`).join('')}</div></div>
+        <div><span style="font-size:12px;font-weight:700;color:var(--red)">❌ Evitar</span><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${worstHours.slice(0,10).map(h=>`<span style="background:#f8d7da;color:#721c24;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:700;font-family:monospace">${h}</span>`).join('')}</div></div>
+      </div></div>`;
+
+    const avgRoasGen=plGen.filter(r=>r.spend>1).reduce((a,r)=>a+r.roas,0)/(plGen.filter(r=>r.spend>1).length||1);
+    const goodRoas=goodPl.length>0?goodPl.reduce((a,r)=>a+r.roas*r.spend,0)/goodPl.reduce((a,r)=>a+r.spend,0):avgRoasGen;
+    const budget=parseFloat(st.genBudget)||10;
+    const projRev=budget*goodRoas;const projProfit=projRev-budget;
+
+    html+=`<div class="card" style="border-top:3px solid ${projProfit>=0?'var(--green)':'var(--red)'}">
+      <h3>💰 Projeção de ROI</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-label">Orçamento/dia</div><div class="kpi-value">$${budget.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">ROAS estimado</div><div class="kpi-value" style="color:var(--green)">${goodRoas.toFixed(2)}x</div></div>
+        <div class="kpi"><div class="kpi-label">Receita/dia</div><div class="kpi-value" style="color:var(--green)">${fmt(projRev)}</div></div>
+        <div class="kpi"><div class="kpi-label">Lucro/dia</div><div class="kpi-value" style="color:${projProfit>=0?'var(--green)':'var(--red)'}">$${projProfit.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">Lucro/mês</div><div class="kpi-value" style="color:${projProfit>=0?'var(--green)':'var(--red)'}">$${(projProfit*30).toFixed(2)}</div></div>
+      </div></div>`;
+
+    const cfgTxt=`📋 CONFIG — ${st.genName||'Nova Campanha'}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 Objetivo: ${st.genObjt==='OUTCOME_TRAFFIC'?'Tráfego':st.genObjt==='OUTCOME_ENGAGEMENT'?'Engajamento':'Leads'}\n💵 Orçamento diário: $${budget.toFixed(2)}\n\n✅ PLACEMENTS RECOMENDADOS:\n${goodPl.map(p=>'  • '+p.p+' (ROAS '+p.roas.toFixed(2)+'x)').join('\n')}\n\n⚠️ TESTAR:\n${testPl.length>0?testPl.map(p=>'  • '+p.p+' (ROAS '+p.roas.toFixed(2)+'x)').join('\n'):'  Nenhum'}\n\n❌ NÃO USAR:\n${badPl.map(p=>'  • '+p.p).join('\n')}\n\n⏰ MELHORES: ${bestHours.slice(0,8).join(', ')}\n⏰ EVITAR: ${worstHours.slice(0,5).join(', ')}\n\n💰 ROAS: ${goodRoas.toFixed(2)}x | Lucro/dia: $${projProfit.toFixed(2)} | Lucro/mês: $${(projProfit*30).toFixed(2)}`;
+
+    html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0">📋 Copiar Configuração</h3>
+      <button onclick="navigator.clipboard.writeText(\`${cfgTxt.replace(/`/g,'\\`')}\`).then(()=>{this.textContent='✅ Copiado!';setTimeout(()=>{this.textContent='📋 Copiar'},2000)})" class="btn btn-green" style="font-size:12px;padding:6px 14px">📋 Copiar</button></div>
+      <pre style="background:var(--bg);padding:14px;border-radius:8px;font-size:11px;white-space:pre-wrap;line-height:1.6;max-height:400px;overflow-y:auto">${cfgTxt}</pre></div>`;
+  }
+
+  // TAB 7: Importar
+  if(tab===7){
+    html+=`<div class="card"><h3>📁 Importar Dados</h3><p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px">Arraste os arquivos Excel pra atualizar o dashboard. Aceita 3 tipos:</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div><p style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--yellow)">📊 Meta Placement</p><div class="import-zone" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="HD(event,'meta')" onclick="document.getElementById('f-meta').click()"><input type="file" id="f-meta" accept=".xlsx,.xls" onchange="HF(event,'meta')"><div style="font-size:12px;color:var(--muted)">Arraste Excel</div></div><div id="s-meta"></div></div>
+      <div><p style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--yellow)">💰 GAM Placement</p><div class="import-zone" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="HD(event,'gam')" onclick="document.getElementById('f-gam').click()"><input type="file" id="f-gam" accept=".xlsx,.xls" onchange="HF(event,'gam')"><div style="font-size:12px;color:var(--muted)">Arraste Excel</div></div><div id="s-gam"></div></div>
+      <div><p style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--yellow)">⏰ ROI por Hora</p><div class="import-zone" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="HD(event,'hourly')" onclick="document.getElementById('f-hourly').click()"><input type="file" id="f-hourly" accept=".xlsx,.xls" onchange="HF(event,'hourly')"><div style="font-size:12px;color:var(--muted)">Arraste Excel</div></div><div id="s-hourly"></div></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px"><button class="btn btn-red" onclick="resetAll()">🗑️ Resetar dados originais</button></div>
+    </div>
+    <div class="card" style="border-top:3px solid var(--green)"><h3>🚀 Publicar pro Time (GitHub)</h3>
+    <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px">Após importar os dados e conferir que está tudo certo, clique no botão abaixo. Ele gera um novo <b style="color:var(--text)">index.html</b> com todos os dados embutidos. Depois é só atualizar no GitHub.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-green" onclick="exportHTML()" style="font-size:14px;padding:12px 24px">📦 Gerar index.html atualizado</button>
+    </div>
+    <div style="margin-top:14px;background:rgba(22,163,74,.08);border-radius:8px;padding:14px">
+      <p style="font-weight:700;margin-bottom:8px;font-size:13px">📋 Depois de baixar o arquivo:</p>
+      <div style="font-size:12px;color:var(--muted);line-height:2">
+        <p>1️⃣ Acesse seu repositório no GitHub</p>
+        <p>2️⃣ Clique em <b style="color:var(--text)">index.html</b> → ícone de <b style="color:var(--text)">lápis</b> (Edit)</p>
+        <p>3️⃣ Selecione tudo (Ctrl+A) → Delete → Cole o conteúdo do novo arquivo (Ctrl+V)</p>
+        <p>4️⃣ Clique em <b style="color:var(--text)">Commit changes</b></p>
+        <p>5️⃣ Aguarde 1-2 min — o time já vê os dados novos! ✅</p>
+      </div>
+    </div>
+    </div>
+    <div class="card"><h3>📊 Status</h3><div style="font-size:12px;color:var(--muted)">Placement: ${rawData.length} registros · Hourly: ${hourlyData.length} registros · ${d.campaigns.length} campanhas · Ativas: ${ACTIVE.map(c=>c.replace('Campanha ','')).join(', ')}</div></div>`;
+  }
+
+  document.getElementById('app').innerHTML=html;
+}
+
+// Event handlers
+function S(k,v){st[k]=v;render()}
+function DS(f){if(st.sf===f)st.sdr*=-1;else{st.sf=f;st.sdr=-1}render()}
+function TM(m){st.mx[m]=!st.mx[m];render()}
+function campSelect(stateKey,campaigns,currentVal){
+  const active=campaigns.filter(c=>ACTIVE.includes(c));
+  const inactive=campaigns.filter(c=>!ACTIVE.includes(c));
+  let h=`<select onchange="S('${stateKey}',this.value)" style="padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-family:'Nunito',sans-serif;cursor:pointer">`;
+  h+=`<option value="all">Todas (${campaigns.length})</option>`;
+  if(active.length>0){h+=`<optgroup label="🟢 Ativas (${active.length})">`;active.forEach(c=>{h+=`<option value="${c}" ${currentVal===c?'selected':''}>${c.replace('Campanha ','C')}</option>`});h+=`</optgroup>`}
+  if(inactive.length>0){h+=`<optgroup label="⚪ Inativas (${inactive.length})">`;inactive.forEach(c=>{h+=`<option value="${c}" ${currentVal===c?'selected':''}>${c.replace('Campanha ','C')}</option>`});h+=`</optgroup>`}
+  h+=`</select>`;
+  return h;
+}
+
+function readXL(file,cb){const r=new FileReader();r.onload=e=>{cb(XLSX.read(e.target.result,{type:'array'}))};r.readAsArrayBuffer(file)}
+function HD(e,t){e.preventDefault();e.target.closest('.import-zone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)PF(f,t)}
+function HF(e,t){const f=e.target.files[0];if(f)PF(f,t)}
+function PF(file,type){
+  const el=document.getElementById('s-'+type);
+  readXL(file,wb=>{
+    try{
+      if(type==='meta'){const rows=parseMetaExcel(wb);rawData=mergeData(rawData,[],[]); rawData=mergeData(INIT_RAW,rows,[]);
+        // Re-merge with existing GAM
+        const gamRows=INIT_RAW.filter(r=>r.gr>0&&r.ms===0);rawData=mergeData(rawData,[],[]); 
+        el.innerHTML=`<div style="padding:8px;background:rgba(22,163,74,.1);border-radius:6px;font-size:11px;color:var(--green);margin-top:6px">✅ ${rows.length} registros (${wb.SheetNames.join(', ')})</div>`}
+      else if(type==='gam'){const rows=parseGamExcel(wb);rawData=mergeData(rawData,[],rows);
+        el.innerHTML=`<div style="padding:8px;background:rgba(22,163,74,.1);border-radius:6px;font-size:11px;color:var(--green);margin-top:6px">✅ ${rows.length} registros (${wb.SheetNames.join(', ')})</div>`}
+      else if(type==='hourly'){const rows=parseHourlyExcel(wb);hourlyData=rows;
+        el.innerHTML=`<div style="padding:8px;background:rgba(22,163,74,.1);border-radius:6px;font-size:11px;color:var(--green);margin-top:6px">✅ ${rows.length} registros (${wb.SheetNames.filter(s=>s!=='Resumo Geral'&&s!=='Resumo por Dia').length} campanhas)</div>`}
+      st.sc='all';st.sd='all';st.tab=0;render();
+    }catch(err){el.innerHTML=`<div style="padding:8px;background:rgba(220,38,38,.1);border-radius:6px;font-size:11px;color:var(--red);margin-top:6px">❌ ${err.message}</div>`}
+  });
+}
+function resetAll(){rawData=[...INIT_RAW];hourlyData=[...INIT_HOURLY];st.tab=0;st.sc='all';st.sd='all';render()}
+
+function generatePlacementReport(incluir,testar,excluir,roas,spend,rev,profit,onlyActive){
+  const today=new Date().toLocaleDateString('pt-BR');
+  const scope=onlyActive==='custom'?'Campanhas Selecionadas':onlyActive?'Campanhas Ativas':'Todas as Campanhas';
+  
+  let txt=`📍 ANÁLISE POR PLACEMENT — GÁS DO POVO\n`;
+  txt+=`📅 ${today} | Base: ${scope}\n`;
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`💰 RESUMO GERAL\n`;
+  txt+=`   Gasto Total:   $${parseFloat(spend).toFixed(2)}\n`;
+  txt+=`   Receita Total:  $${parseFloat(rev).toFixed(2)}\n`;
+  txt+=`   Lucro:          $${parseFloat(profit).toFixed(2)}\n`;
+  txt+=`   ROAS Geral:     ${roas}x\n\n`;
+  
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`✅ INCLUIR NA CAMPANHA (${incluir.length})\n\n`;
+  if(incluir.length===0) txt+=`   Nenhum placement com ROAS > 1.05x\n\n`;
+  incluir.forEach((r,i)=>{
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'  •';
+    txt+=`   ${medal} ${r.p}\n`;
+    txt+=`      ROAS: ${r.roas}x | Lucro: $${r.profit.toFixed(2)} | Gasto: $${r.spend.toFixed(2)} (${r.pctBudget}%)\n\n`;
+  });
+  
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`⚠️ TESTAR COM BUDGET LIMITADO (${testar.length})\n\n`;
+  if(testar.length===0) txt+=`   Nenhum placement na zona de teste\n\n`;
+  testar.forEach(r=>{
+    txt+=`   • ${r.p}\n`;
+    txt+=`      ROAS: ${r.roas}x | Lucro: $${r.profit.toFixed(2)} | Gasto: $${r.spend.toFixed(2)} (${r.pctBudget}%)\n\n`;
+  });
+  
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`❌ NÃO SELECIONAR (${excluir.length})\n\n`;
+  excluir.forEach(r=>{
+    txt+=`   ✘ ${r.p} — ROAS: ${r.roas}x | Lucro: $${r.profit.toFixed(2)}\n`;
+  });
+  
+  txt+=`\n${'─'.repeat(45)}\n\n`;
+  
+  txt+=`🎯 CONFIG SUGERIDA — META ADS\n`;
+  txt+=`   Posicionamentos Manuais:\n\n`;
+  incluir.forEach(r=>{txt+=`   ✅ ${r.p}\n`});
+  testar.forEach(r=>{txt+=`   ⚠️ ${r.p} (budget limitado)\n`});
+  txt+=`\n   Não selecionar:\n`;
+  excluir.forEach(r=>{txt+=`   ❌ ${r.p}\n`});
+  
+  txt+=`\n${'─'.repeat(45)}\n`;
+  txt+=`Gerado pelo Dashboard ROI — Gás do Povo`;
+  
+  document.getElementById('report-title').textContent='📍 Relatório por Placement';
+  document.getElementById('report-text').textContent=txt;
+  document.getElementById('report-modal').style.display='flex';
+}
+
+function generateHourlyReport(onlyActive){
+  const today=new Date().toLocaleDateString('pt-BR');
+  const scope=onlyActive==='custom'?'Campanhas Selecionadas':onlyActive?'Campanhas Ativas':'Todas as Campanhas';
+  
+  // Process hourly data
+  const activeCamps=ACTIVE;
+  let hF=hourlyData;
+  const fCamps=onlyActive==='custom'?(st.analysisCustom||[...ACTIVE]):onlyActive?activeCamps:null;if(fCamps) hF=hF.filter(r=>fCamps.includes(r.c));
+  
+  const byH={};for(let h=0;h<24;h++)byH[h]={s:0,r:0};
+  hF.forEach(r=>{byH[r.h].s+=r.s;byH[r.h].r+=r.r});
+  
+  const hours=[];
+  for(let h=0;h<24;h++){
+    const s=byH[h].s,r=byH[h].r;
+    if(s>0||r>0) hours.push({h,s:+s.toFixed(2),r:+r.toFixed(2),p:+(r-s).toFixed(2),roas:s>0?+(r/s).toFixed(2):r>0?999:0});
+  }
+  
+  const totalS=hours.reduce((a,r)=>a+r.s,0);
+  const totalR=hours.reduce((a,r)=>a+r.r,0);
+  const totalP=totalR-totalS;
+  
+  const profitable=hours.filter(r=>r.p>0).sort((a,b)=>b.p-a.p);
+  const losing=hours.filter(r=>r.p<0).sort((a,b)=>a.p-b.p);
+  const bestRoas=hours.filter(r=>r.s>0.5).sort((a,b)=>b.roas-a.roas);
+  
+  // Find best time windows
+  const windows=[];
+  let winStart=null,winProfit=0;
+  for(let h=0;h<24;h++){
+    const hr=hours.find(r=>r.h===h);
+    if(hr&&hr.p>0){
+      if(winStart===null)winStart=h;
+      winProfit+=hr.p;
+    }else{
+      if(winStart!==null){windows.push({start:winStart,end:h-1,profit:+winProfit.toFixed(2)});winStart=null;winProfit=0}
+    }
+  }
+  if(winStart!==null)windows.push({start:winStart,end:23,profit:+winProfit.toFixed(2)});
+  windows.sort((a,b)=>b.profit-a.profit);
+  
+  let txt=`⏰ ANÁLISE ROI POR HORA — GÁS DO POVO\n`;
+  txt+=`📅 ${today} | Base: ${scope}\n`;
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`💰 RESUMO\n`;
+  txt+=`   Gasto Total:   $${totalS.toFixed(2)}\n`;
+  txt+=`   Receita Total:  $${totalR.toFixed(2)}\n`;
+  txt+=`   Lucro:          $${totalP.toFixed(2)}\n`;
+  txt+=`   ROAS Geral:     ${totalS>0?(totalR/totalS).toFixed(2):'0'}x\n\n`;
+  
+  txt+=`${'─'.repeat(45)}\n\n`;
+  
+  txt+=`🟢 HORÁRIOS LUCRATIVOS (${profitable.length})\n\n`;
+  profitable.forEach((r,i)=>{
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'  •';
+    const label=String(r.h).padStart(2,'0')+'h';
+    txt+=`   ${medal} ${label} — Lucro: $${r.p.toFixed(2)} | ROAS: ${r.roas}x | Gasto: $${r.s.toFixed(2)}\n`;
+  });
+  
+  txt+=`\n${'─'.repeat(45)}\n\n`;
+  
+  txt+=`🔴 HORÁRIOS COM PREJUÍZO (${losing.length})\n\n`;
+  losing.forEach(r=>{
+    const label=String(r.h).padStart(2,'0')+'h';
+    txt+=`   ✘ ${label} — Prejuízo: $${r.p.toFixed(2)} | ROAS: ${r.roas}x | Gasto: $${r.s.toFixed(2)}\n`;
+  });
+  
+  txt+=`\n${'─'.repeat(45)}\n\n`;
+  
+  if(bestRoas.length>0){
+    txt+=`📈 MELHOR ROAS POR HORA (top 5, mín $0.50 gasto)\n\n`;
+    bestRoas.slice(0,5).forEach((r,i)=>{
+      const label=String(r.h).padStart(2,'0')+'h';
+      txt+=`   ${i+1}. ${label} — ROAS: ${r.roas}x | Receita: $${r.r.toFixed(2)} | Gasto: $${r.s.toFixed(2)}\n`;
+    });
+    txt+=`\n${'─'.repeat(45)}\n\n`;
+  }
+  
+  if(windows.length>0){
+    txt+=`🕐 JANELAS DE LUCRO (horários consecutivos)\n\n`;
+    windows.forEach((w,i)=>{
+      txt+=`   ${i+1}. ${String(w.start).padStart(2,'0')}h → ${String(w.end).padStart(2,'0')}h — Lucro acumulado: $${w.profit.toFixed(2)}\n`;
+    });
+    txt+=`\n${'─'.repeat(45)}\n\n`;
+  }
+  
+  txt+=`🎯 RECOMENDAÇÃO DE PROGRAMAÇÃO\n\n`;
+  if(windows.length>0){
+    const best=windows[0];
+    txt+=`   Concentrar budget entre ${String(best.start).padStart(2,'0')}h e ${String(best.end).padStart(2,'0')}h\n`;
+    txt+=`   (janela com maior lucro acumulado: $${best.profit.toFixed(2)})\n\n`;
+  }
+  if(losing.length>0){
+    txt+=`   Reduzir/pausar entre:\n`;
+    losing.slice(0,3).forEach(r=>{
+      txt+=`   ✘ ${String(r.h).padStart(2,'0')}h (prejuízo: $${r.p.toFixed(2)})\n`;
+    });
+  }
+  
+  txt+=`\n${'─'.repeat(45)}\n`;
+  txt+=`Gerado pelo Dashboard ROI — Gás do Povo`;
+  
+  document.getElementById('report-title').textContent='⏰ Relatório por Hora';
+  document.getElementById('report-text').textContent=txt;
+  document.getElementById('report-modal').style.display='flex';
+}
+
+function copyReport(){
+  const txt=document.getElementById('report-text').textContent;
+  navigator.clipboard.writeText(txt).then(()=>{
+    document.getElementById('copy-status').innerHTML='<span style="color:var(--green);font-size:12px">✅ Copiado!</span>';
+    setTimeout(()=>{document.getElementById('copy-status').innerHTML=''},2000);
+  }).catch(()=>{
+    // Fallback
+    const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    document.getElementById('copy-status').innerHTML='<span style="color:var(--green);font-size:12px">✅ Copiado!</span>';
+  });
+}
+
+function exportHTML(){
+  // Get current page HTML as template
+  const fullHTML=document.documentElement.outerHTML;
+  
+  // Build new data strings
+  const newPlacement=JSON.stringify(rawData);
+  const newHourly=JSON.stringify(hourlyData);
+  const newActive=JSON.stringify(ACTIVE);
+  
+  // Replace the data constants in the HTML source
+  // We need to work with the original source, not the rendered DOM
+  let src=new XMLSerializer().serializeToString(document.doctype)+'\n'+document.documentElement.outerHTML;
+  
+  // Actually, better approach: fetch our own source and replace
+  // Since we can't fetch file://, let's reconstruct from the current page
+  const orig=document.querySelector('script:not([src])');
+  if(!orig){alert('Erro ao exportar');return}
+  
+  let scriptContent=orig.textContent;
+  
+  // Replace INIT_RAW data
+  scriptContent=scriptContent.replace(
+    /const INIT_RAW = \[.*?\];/s,
+    'const INIT_RAW = '+newPlacement+';'
+  );
+  
+  // Replace INIT_HOURLY data  
+  scriptContent=scriptContent.replace(
+    /const INIT_HOURLY = \[.*?\];/s,
+    'const INIT_HOURLY = '+newHourly+';'
+  );
+  
+  // Replace ACTIVE campaigns
+  scriptContent=scriptContent.replace(
+    /let ACTIVE=\[.*?\];/,
+    'let ACTIVE='+newActive+';'
+  );
+  
+  // Build full HTML
+  const styles=document.querySelector('style').textContent;
+  const xlsxScript='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  
+  const newHTML=`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROI OFFERWALL STREET - GAS DO POVO</title>
+<script src="${xlsxScript}"><\/script>
+<style>${styles}</style>
+</head>
+<body>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#1a472a 0%,#2d6a4f 50%,#1a472a 100%)">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:90%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:32px;margin-bottom:8px">📊</div>
+      <h2 style="margin:0;font-size:18px;font-weight:800;color:#1a472a;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px">ROI OFFERWALL STREET</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:#888">GAS DO POVO · Dashboard</p>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Login</label>
+      <input id="login-user" type="text" placeholder="Usuário" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'">
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:4px">Senha</label>
+      <input id="login-pass" type="password" placeholder="Senha" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border .2s" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0e0e0'" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button onclick="doLogin()" style="width:100%;padding:14px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s" onmouseover="this.style.background='#1a472a'" onmouseout="this.style.background='#2d6a4f'">Entrar</button>
+    <div id="login-error" style="display:none;text-align:center;margin-top:12px;color:#e74c3c;font-size:13px;font-weight:600"></div>
+  </div>
+</div>
+<div id="app" style="display:none">Carregando...</div>
+<script>${scriptContent}<\/script>
+</body>
+</html>`;
+  
+  // Download
+  const blob=new Blob([newHTML],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='index.html';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+if(checkAuth()){render();loadSheetsData();}
+</script>
+</body>
+</html>
